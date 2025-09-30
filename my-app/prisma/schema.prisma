@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum TipoAtividade {
+  PLUGGED
+  UNPLUGGED
+}
+
+model Administrador {
+  idAdm    Int    @id @default(autoincrement())
+  nome     String
+  email    String @unique
+  senha    String
+}
+
+model Professor {
+  idProfessor Int    @id @default(autoincrement())
+  nome        String
+  email       String @unique
+  senha       String
+
+  turmas Turma[]
+}
+
+model Aluno {
+  idAluno  Int    @id @default(autoincrement())
+  nome     String
+  email    String @unique
+  senha    String
+
+  turmas   TurmaAluno[]
+  respostas RespostaAlunoAtividade[]
+}
+
+model Turma {
+  idTurma     Int    @id @default(autoincrement())
+  nome        String
+  professorId Int
+  professor   Professor @relation(fields: [professorId], references: [idProfessor])
+
+  alunos     TurmaAluno[]
+  atividades AtividadeTurma[]
+}
+
+model TurmaAluno {
+  idTurma Int
+  idAluno Int
+
+  turma Turma @relation(fields: [idTurma], references: [idTurma])
+  aluno Aluno @relation(fields: [idAluno], references: [idAluno])
+
+  @@id([idTurma, idAluno])
+}
+
+model Atividade {
+  idAtividade Int     @id @default(autoincrement())
+  titulo      String
+  descricao   String?
+  tipo        TipoAtividade
+  nota        Float
+
+  alternativas Alternativa[]
+  turmas       AtividadeTurma[]
+  respostas    RespostaAlunoAtividade[]
+}
+
+model AtividadeTurma {
+  idAtividadeTurma Int    @id @default(autoincrement())
+  idAtividade      Int
+  idTurma          Int
+  dataAplicacao    DateTime?
+
+  atividade Atividade @relation(fields: [idAtividade], references: [idAtividade])
+  turma     Turma     @relation(fields: [idTurma], references: [idTurma])
+}
+
+model Alternativa {
+  idAlternativa Int     @id @default(autoincrement())
+  idAtividade   Int
+  texto         String
+  correta       Boolean
+
+  atividade Atividade @relation(fields: [idAtividade], references: [idAtividade])
+  respostas  RespostaAlunoAtividade[]
+}
+
+model RespostaAlunoAtividade {
+  idResposta             Int     @id @default(autoincrement())
+  idAluno                Int
+  idAtividade            Int
+  respostaTexto          String?
+  idAlternativaEscolhida Int?
+  notaObtida             Float?
+  feedback               String?
+  dataAplicacao          DateTime?
+
+  aluno       Aluno       @relation(fields: [idAluno], references: [idAluno])
+  atividade   Atividade   @relation(fields: [idAtividade], references: [idAtividade])
+  alternativa Alternativa? @relation(fields: [idAlternativaEscolhida], references: [idAlternativa])
+}
