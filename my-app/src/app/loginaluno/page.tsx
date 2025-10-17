@@ -3,18 +3,29 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import React from "react";
 
 export default function login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const router = useRouter();
 
-  function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (email === "aluno@exemplo.com" && senha === "123") {
+    const res = await fetch("/api/loginaluno", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, senha }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      // Salva idAluno/nome/email se quiser
+      localStorage.setItem("idAluno", data.idAluno);
+      localStorage.setItem("nomeAluno", data.nome);
+      localStorage.setItem("emailAluno", data.email);
       router.push("/pginialuno"); // coloque o caminho correto aqui
     } else {
-      alert("Email ou senha incorretos!");
+      alert(data.error || "Email ou senha incorretos!");
     }
   }
 
@@ -25,8 +36,8 @@ export default function login() {
           src="/images/Logopng.png"
           alt="codificai logo"
           className="logo"
-          width="200"
-          height="200"
+          width={200}
+          height={200}
         />
         <h2>Login Aluno</h2>
         <form onSubmit={handleSubmit}>

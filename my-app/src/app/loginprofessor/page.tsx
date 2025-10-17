@@ -20,7 +20,10 @@ export default function Home() {
     const data = await res.json();
     if (res.ok && data.success) {
       setNomeProfessor(data.nome);
-      router.push("/pginicialprofessor");
+      localStorage.setItem("idProfessor", data.idProfessor);
+      localStorage.setItem("nomeProfessor", data.nome);
+      localStorage.setItem("emailProfessor", data.email);
+      router.push("/pginicialprofessor"); // ajuste o nome da página inicial se necessário
     } else {
       alert(data.error || "Email ou senha incorretos!");
     }

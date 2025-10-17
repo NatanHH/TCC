@@ -41,12 +41,25 @@ CREATE TABLE "TurmaAluno" (
 );
 
 -- CreateTable
+CREATE TABLE "AtividadeArquivo" (
+    "idArquivo" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "url" TEXT NOT NULL,
+    "tipoArquivo" TEXT,
+    "atividadeId" INTEGER NOT NULL,
+    CONSTRAINT "AtividadeArquivo_atividadeId_fkey" FOREIGN KEY ("atividadeId") REFERENCES "Atividade" ("idAtividade") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
 CREATE TABLE "Atividade" (
     "idAtividade" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "titulo" TEXT NOT NULL,
     "descricao" TEXT,
     "tipo" TEXT NOT NULL,
-    "nota" REAL NOT NULL
+    "nota" REAL NOT NULL,
+    "professorId" INTEGER,
+    "script" TEXT,
+    "linguagem" TEXT,
+    CONSTRAINT "Atividade_professorId_fkey" FOREIGN KEY ("professorId") REFERENCES "Professor" ("idProfessor") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable

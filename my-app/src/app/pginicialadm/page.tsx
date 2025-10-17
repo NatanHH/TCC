@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, ChangeEvent } from "react";
 import styles from "./page.module.css";
 
-// Painel do Administrador - Professores CRUD consumindo API
+// Painel do Administrador - Professores CRUD + Atividades CRUD (PLUGGED/UNPLUGGED)
 export default function PainelAdm() {
   const [professores, setProfessores] = useState([]);
   const [funcaoSelecionada, setFuncaoSelecionada] = useState<string | null>(
@@ -28,6 +28,19 @@ export default function PainelAdm() {
   const [popupAberto, setPopupAberto] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Atividades
+  const [atividades, setAtividades] = useState([]);
+  const [loadingAtividades, setLoadingAtividades] = useState(false);
+  const [formAtividade, setFormAtividade] = useState({
+    titulo: "",
+    descricao: "",
+    tipo: "PLUGGED",
+    nota: 10,
+    script: "",
+    linguagem: "",
+  });
+  const [arquivos, setArquivos] = useState<File[]>([]);
+
   // Buscar professores quando abrir painel ou fechar formulário
   useEffect(() => {
     if (funcaoSelecionada === "Professores") {
@@ -47,11 +60,32 @@ export default function PainelAdm() {
     setLoading(false);
   }
 
+  // Buscar atividades quando abrir painel de atividades
+  useEffect(() => {
+    if (funcaoSelecionada === "Atividades") {
+      fetchAtividades();
+    }
+  }, [funcaoSelecionada]);
+
+  async function fetchAtividades() {
+    setLoadingAtividades(true);
+    try {
+      const res = await fetch("/api/atividade");
+      const data = await res.json();
+      if (res.ok) setAtividades(data);
+      else setAtividades([]);
+    } catch {
+      setAtividades([]);
+    }
+    setLoadingAtividades(false);
+  }
+
   function selecionarFuncao(funcao: string) {
     setFuncaoSelecionada(funcao);
     setShowForm(false);
     setEditingProfessor(null);
   }
+
   function voltarMenu() {
     setFuncaoSelecionada(null);
     setShowForm(false);
@@ -155,6 +189,71 @@ export default function PainelAdm() {
     }
   }
 
+  function handleFormAtividadeChange(
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) {
+    setFormAtividade({ ...formAtividade, [e.target.name]: e.target.value });
+  }
+
+  function handleArquivosChange(e: ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) {
+      setArquivos(Array.from(e.target.files));
+    }
+  }
+
+  async function handleFormAtividadeSubmit(
+    e: React.FormEvent<HTMLFormElement>
+  ) {
+    e.preventDefault();
+
+    // 1. Cria a atividade
+    const res = await fetch("/api/atividade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        titulo: formAtividade.titulo,
+        descricao: formAtividade.descricao,
+        tipo: formAtividade.tipo,
+        nota: formAtividade.nota,
+        script: formAtividade.tipo === "PLUGGED" ? formAtividade.script : null,
+        linguagem:
+          formAtividade.tipo === "PLUGGED" && formAtividade.linguagem
+            ? formAtividade.linguagem
+            : null,
+      }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      // 2. Se for UNPLUGGED, faz upload dos arquivos
+      if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
+        const formDataUpload = new FormData();
+        arquivos.forEach((file) => formDataUpload.append("arquivos", file));
+        formDataUpload.append("atividadeId", data.idAtividade);
+
+        await fetch("/api/upload-arquivos-atividade", {
+          method: "POST",
+          body: formDataUpload,
+        });
+      }
+      alert("Atividade criada!");
+      setFormAtividade({
+        titulo: "",
+        descricao: "",
+        tipo: "PLUGGED",
+        nota: 10,
+        script: "",
+        linguagem: "",
+      });
+      setArquivos([]);
+      fetchAtividades();
+    } else {
+      alert(data.error || "Erro ao criar atividade.");
+    }
+  }
+
   return (
     <div className={styles.paginaAlunoBody}>
       {/* Sidebar */}
@@ -190,7 +289,7 @@ export default function PainelAdm() {
         {/* Header */}
         <div className={styles.header}>
           <h1>
-            ADM: <span className={styles.headerTitleSpan}>ADMExemplo</span>
+            ADM: <span className={styles.headerTitleSpan}>Funções do ADM</span>
           </h1>
           <div className={styles.userInfoWrapper}>
             <div
@@ -204,7 +303,7 @@ export default function PainelAdm() {
                 alt="Avatar"
               />
               <div className={styles.userDetails}>
-                <span className={styles.userName}>ADM Exemplo</span>
+                <span className={styles.userName}>ADM</span>
                 <span className={styles.userEmail}>adm@exemplo.com</span>
               </div>
             </div>
@@ -215,7 +314,7 @@ export default function PainelAdm() {
             >
               <h3>Detalhes do ADM</h3>
               <p>
-                <strong>Nome:</strong> ADM Exemplo
+                <strong>Nome:</strong> ADM
               </p>
               <p>
                 <strong>Email:</strong> adm@exemplo.com
@@ -436,11 +535,129 @@ export default function PainelAdm() {
           </div>
         )}
 
-        {/* Painel de Atividades (placeholder) */}
+        {/* Painel de Atividades CRUD */}
         {funcaoSelecionada === "Atividades" && (
           <div className={styles.card}>
-            <h2>Função: Atividades</h2>
-            <p>Gerencie as atividades do sistema.</p>
+            <h2>Criar Nova Atividade</h2>
+            <form
+              onSubmit={handleFormAtividadeSubmit}
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+              encType={
+                formAtividade.tipo === "UNPLUGGED"
+                  ? "multipart/form-data"
+                  : "application/json"
+              }
+            >
+              <input
+                name="titulo"
+                type="text"
+                placeholder="Título"
+                required
+                value={formAtividade.titulo}
+                onChange={handleFormAtividadeChange}
+                className={styles.input}
+              />
+              <textarea
+                name="descricao"
+                placeholder="Descrição"
+                required
+                value={formAtividade.descricao}
+                onChange={handleFormAtividadeChange}
+                className={styles.input}
+              />
+              <select
+                name="tipo"
+                value={formAtividade.tipo}
+                onChange={handleFormAtividadeChange}
+                className={styles.input}
+              >
+                <option value="PLUGGED">Plugged</option>
+                <option value="UNPLUGGED">Unplugged</option>
+              </select>
+              <input
+                name="nota"
+                type="number"
+                min={0}
+                max={100}
+                required
+                value={formAtividade.nota}
+                onChange={handleFormAtividadeChange}
+                className={styles.input}
+              />
+
+              {/* Se for PLUGGED, aparece o campo de script e linguagem */}
+              {formAtividade.tipo === "PLUGGED" && (
+                <>
+                  <textarea
+                    name="script"
+                    placeholder="Script da atividade (código)"
+                    required
+                    value={formAtividade.script}
+                    onChange={handleFormAtividadeChange}
+                    className={styles.input}
+                  />
+                  <input
+                    name="linguagem"
+                    type="text"
+                    placeholder="Linguagem (ex: python, javascript)"
+                    required
+                    value={formAtividade.linguagem}
+                    onChange={handleFormAtividadeChange}
+                    className={styles.input}
+                  />
+                </>
+              )}
+
+              {/* Se for UNPLUGGED, aparece o campo de upload */}
+              {formAtividade.tipo === "UNPLUGGED" && (
+                <>
+                  <label>
+                    Anexar arquivos (imagens ou PDFs):
+                    <input
+                      type="file"
+                      name="arquivos"
+                      multiple
+                      accept="image/*,application/pdf"
+                      onChange={handleArquivosChange}
+                      className={styles.input}
+                    />
+                  </label>
+                  {arquivos.length > 0 && (
+                    <ul>
+                      {arquivos.map((file, idx) => (
+                        <li key={idx}>{file.name}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+
+              <button
+                type="submit"
+                style={{ background: "#4caf50", color: "#fff" }}
+                className={styles.btn}
+              >
+                Criar Atividade
+              </button>
+            </form>
+            <hr />
+            <h2>Atividades Criadas</h2>
+            {loadingAtividades ? (
+              <p>Carregando atividades...</p>
+            ) : (
+              <ul>
+                {atividades.length === 0 && (
+                  <li>Nenhuma atividade cadastrada.</li>
+                )}
+                {atividades.map((a: any) => (
+                  <li key={a.idAtividade}>
+                    <strong>{a.titulo}</strong> ({a.tipo}) - Nota: {a.nota}
+                    <br />
+                    {a.descricao}
+                  </li>
+                ))}
+              </ul>
+            )}
             <button className={styles.btn} onClick={voltarMenu}>
               Voltar
             </button>
