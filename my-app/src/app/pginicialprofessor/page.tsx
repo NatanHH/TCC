@@ -932,4 +932,3 @@ export default function PageProfessor() {
     </div>
   );
 }
-git add . 
