@@ -1,3 +1,4 @@
+// NOTE: cole no mesmo local do seu painel_adm.tsx, substituindo o conteúdo existente
 "use client";
 import React, { useState, useEffect, ChangeEvent } from "react";
 import styles from "./page.module.css";
@@ -37,9 +38,17 @@ export default function PainelAdm() {
     tipo: "PLUGGED",
     nota: 10,
     script: "",
-    linguagem: "",
+    linguagem: "assemblyscript",
   });
   const [arquivos, setArquivos] = useState<File[]>([]);
+
+  // Alternativas para atividades PLUGGED
+  type Alt = { texto: string; id?: number };
+  const [alternativas, setAlternativas] = useState<Alt[]>([
+    { texto: "" },
+    { texto: "" },
+  ]);
+  const [correctIndex, setCorrectIndex] = useState<number | null>(null);
 
   // Buscar professores quando abrir painel ou fechar formulário
   useEffect(() => {
@@ -203,16 +212,47 @@ export default function PainelAdm() {
     }
   }
 
+  // Alternativas handlers
+  function addAlternativa() {
+    setAlternativas((prev) => [...prev, { texto: "" }]);
+  }
+  function removeAlternativa(index: number) {
+    setAlternativas((prev) => prev.filter((_, i) => i !== index));
+    setCorrectIndex((prev) =>
+      prev === index ? null : prev !== null && prev > index ? prev - 1 : prev
+    );
+  }
+  function updateAlternativaText(index: number, texto: string) {
+    setAlternativas((prev) =>
+      prev.map((a, i) => (i === index ? { ...a, texto } : a))
+    );
+  }
+  function setCorrectAlternative(index: number) {
+    setCorrectIndex(index);
+  }
+
   async function handleFormAtividadeSubmit(
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
 
+    // Validations for PLUGGED
+    if (formAtividade.tipo === "PLUGGED") {
+      // ensure at least one alternativa with text
+      const filled = alternativas.map((a) => a.texto?.trim()).filter(Boolean);
+      if (filled.length === 0) {
+        alert("Adicione pelo menos uma alternativa para atividades PLUGGED.");
+        return;
+      }
+      if (correctIndex === null || !alternativas[correctIndex]?.texto?.trim()) {
+        alert("Marque qual alternativa é a correta.");
+        return;
+      }
+    }
+
     // 1. Cria a atividade
-    const res = await fetch("/api/atividade", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const payload: any = {
         titulo: formAtividade.titulo,
         descricao: formAtividade.descricao,
         tipo: formAtividade.tipo,
@@ -222,35 +262,59 @@ export default function PainelAdm() {
           formAtividade.tipo === "PLUGGED" && formAtividade.linguagem
             ? formAtividade.linguagem
             : null,
-      }),
-    });
-    const data = await res.json();
+      };
 
-    if (res.ok) {
-      // 2. Se for UNPLUGGED, faz upload dos arquivos
-      if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
-        const formDataUpload = new FormData();
-        arquivos.forEach((file) => formDataUpload.append("arquivos", file));
-        formDataUpload.append("atividadeId", data.idAtividade);
-
-        await fetch("/api/upload-arquivos-atividade", {
-          method: "POST",
-          body: formDataUpload,
-        });
+      if (formAtividade.tipo === "PLUGGED") {
+        // attach alternativas array (texto + correta boolean)
+        payload.alternativas = alternativas
+          .map((a, i) => ({
+            texto: a.texto || "",
+            correta: i === correctIndex,
+          }))
+          .filter((a) => a.texto.trim() !== "");
       }
-      alert("Atividade criada!");
-      setFormAtividade({
-        titulo: "",
-        descricao: "",
-        tipo: "PLUGGED",
-        nota: 10,
-        script: "",
-        linguagem: "",
+
+      const res = await fetch("/api/atividade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      setArquivos([]);
-      fetchAtividades();
-    } else {
-      alert(data.error || "Erro ao criar atividade.");
+
+      const data = await res.json();
+
+      if (res.ok) {
+        // 2. Se for UNPLUGGED, faz upload dos arquivos
+        if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
+          const formDataUpload = new FormData();
+          arquivos.forEach((file) => formDataUpload.append("arquivos", file));
+          formDataUpload.append("atividadeId", data.idAtividade);
+
+          await fetch("/api/upload-arquivos-atividade", {
+            method: "POST",
+            body: formDataUpload,
+          });
+        }
+
+        alert("Atividade criada!");
+        // reset form
+        setFormAtividade({
+          titulo: "",
+          descricao: "",
+          tipo: "PLUGGED",
+          nota: 10,
+          script: "",
+          linguagem: "assemblyscript",
+        });
+        setArquivos([]);
+        setAlternativas([{ texto: "" }, { texto: "" }]);
+        setCorrectIndex(null);
+        fetchAtividades();
+      } else {
+        alert(data.error || "Erro ao criar atividade.");
+      }
+    } catch (err) {
+      console.error("Erro ao criar atividade:", err);
+      alert("Erro ao criar atividade (ver console).");
     }
   }
 
@@ -585,9 +649,70 @@ export default function PainelAdm() {
                 className={styles.input}
               />
 
-              {/* Se for PLUGGED, aparece o campo de script e linguagem */}
+              {/* Se for PLUGGED, aparece o campo de script, linguagem e alternativas */}
               {formAtividade.tipo === "PLUGGED" && (
                 <>
+                  <label style={{ color: "#fff", fontWeight: 600 }}>
+                    Alternativas
+                  </label>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    {alternativas.map((alt, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="correctAlt"
+                          checked={correctIndex === idx}
+                          onChange={() => setCorrectAlternative(idx)}
+                          aria-label={`Marcar alternativa ${
+                            idx + 1
+                          } como correta`}
+                        />
+                        <input
+                          type="text"
+                          placeholder={`Alternativa ${idx + 1}`}
+                          value={alt.texto}
+                          onChange={(e) =>
+                            updateAlternativaText(idx, e.target.value)
+                          }
+                          className={styles.input}
+                          style={{ flex: 1 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeAlternativa(idx)}
+                          style={{
+                            background: "#b71c1c",
+                            color: "#fff",
+                            border: "none",
+                            padding: "6px 8px",
+                            borderRadius: 6,
+                          }}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={addAlternativa}
+                        className={styles.btn}
+                        style={{ background: "#448aff", color: "#fff" }}
+                      >
+                        Adicionar Alternativa
+                      </button>
+                    </div>
+                  </div>
+
                   <textarea
                     name="script"
                     placeholder="Script da atividade (código)"
@@ -595,11 +720,12 @@ export default function PainelAdm() {
                     value={formAtividade.script}
                     onChange={handleFormAtividadeChange}
                     className={styles.input}
+                    style={{ marginTop: 8 }}
                   />
                   <input
                     name="linguagem"
                     type="text"
-                    placeholder="Linguagem (ex: python, javascript)"
+                    placeholder="Linguagem (ex: assemblyscript)"
                     required
                     value={formAtividade.linguagem}
                     onChange={handleFormAtividadeChange}

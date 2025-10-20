@@ -97,7 +97,7 @@ export default function Page(): JSX.Element {
             alt="Logo Codificaax"
           />
         </div>
-        <h2>Minhas Atividades</h2>
+        <h2>Minhas Atividades Concluídas</h2>
         {/* você pode listar filtros ou turmas aqui se quiser */}
       </aside>
 
@@ -105,7 +105,9 @@ export default function Page(): JSX.Element {
         <div className={styles.header}>
           <h1>
             Atividades{" "}
-            <span className={styles.headerTitleSpan}>: Minhas turmas</span>
+            <span className={styles.headerTitleSpan}>
+              : Minhas Atividades Concluídas
+            </span>
           </h1>
 
           <div className={styles.userInfoWrapper}>

@@ -76,20 +76,19 @@ model Atividade {
   tipo         TipoAtividade
   nota         Float
 
-  // MANTEMOS professorId por enquanto (para migração segura)
   professorId  Int?
   professor    Professor? @relation(fields: [professorId], references: [idProfessor])
 
   arquivos     AtividadeArquivo[]
 
-  script       String?
-  linguagem    String?
+  script       String?     // código-fonte (AssemblyScript) colado pelo admin
+  linguagem    String?     // e.g. "assemblyscript"
+  wasmUrl      String?     // URL relativo para .wasm gerado ou carregado
 
   alternativas Alternativa[]
   turmas       AtividadeTurma[]
   respostas    RespostaAlunoAtividade[]
 
-  // nova relação N:N via tabela de junção
   professoresRelacao AtividadeProfessor[]
 }
 
