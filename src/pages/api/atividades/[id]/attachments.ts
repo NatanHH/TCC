@@ -13,8 +13,6 @@ export default async function handler(
   if (Number.isNaN(atividadeId))
     return res.status(400).json({ error: "ID inválido" });
 
-  console.log(`[API] GET /api/atividades/${atividadeId}/attachments called`);
-
   try {
     const anexos = await prisma.atividadeArquivo.findMany({
       where: { atividadeId },
@@ -24,10 +22,8 @@ export default async function handler(
         tipoArquivo: true,
       },
     });
-    // Retorna a array diretamente (compatível com consumidores que esperam lista)
-    return res.status(200).json(anexos);
+    return res.status(200).json({ anexos });
   } catch (e: any) {
-    console.error("[API] /api/atividades/[id]/attachments error:", e);
-    return res.status(500).json({ error: e.message ?? String(e) });
+    return res.status(500).json({ error: e.message });
   }
 }

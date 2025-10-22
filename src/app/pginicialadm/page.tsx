@@ -30,7 +30,7 @@ export default function PainelAdm() {
   const [loading, setLoading] = useState(false);
 
   // Atividades
-  const [atividades, setAtividades] = useState([]);
+  const [atividades, setAtividades] = useState<any[]>([]);
   const [loadingAtividades, setLoadingAtividades] = useState(false);
   const [formAtividade, setFormAtividade] = useState({
     titulo: "",
@@ -41,6 +41,7 @@ export default function PainelAdm() {
     linguagem: "assemblyscript",
   });
   const [arquivos, setArquivos] = useState<File[]>([]);
+  const [arquivosPreviews, setArquivosPreviews] = useState<string[]>([]);
 
   // Alternativas para atividades PLUGGED
   type Alt = { texto: string; id?: number };
@@ -81,8 +82,13 @@ export default function PainelAdm() {
     try {
       const res = await fetch("/api/atividade");
       const data = await res.json();
-      if (res.ok) setAtividades(data);
-      else setAtividades([]);
+      if (res.ok) {
+        // API may return either an array or an object like { atividades: [...] }
+        if (Array.isArray(data)) setAtividades(data);
+        else if (data && Array.isArray(data.atividades))
+          setAtividades(data.atividades);
+        else setAtividades([]);
+      } else setAtividades([]);
     } catch {
       setAtividades([]);
     }
@@ -208,9 +214,25 @@ export default function PainelAdm() {
 
   function handleArquivosChange(e: ChangeEvent<HTMLInputElement>) {
     if (e.target.files) {
-      setArquivos(Array.from(e.target.files));
+      const files = Array.from(e.target.files);
+      setArquivos(files);
+      // create object URLs for preview
+      const previews = files.map((f) => URL.createObjectURL(f));
+      // revoke previous previews
+      setArquivosPreviews((prev) => {
+        prev.forEach((url) => URL.revokeObjectURL(url));
+        return previews;
+      });
     }
   }
+
+  // cleanup previews on unmount
+  useEffect(() => {
+    return () => {
+      arquivosPreviews.forEach((url) => URL.revokeObjectURL(url));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Alternativas handlers
   function addAlternativa() {

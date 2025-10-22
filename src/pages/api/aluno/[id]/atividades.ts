@@ -29,17 +29,17 @@ export default async function handler(
     return res.status(405).json({ error: "Método não permitido" });
 
   const { id } = req.query;
-  const alunoId = Number(id);
-  if (Number.isNaN(alunoId))
+  const idAluno = Number(id);
+  if (Number.isNaN(idAluno))
     return res.status(400).json({ error: "ID inválido" });
 
   try {
     // 1) Recupera as turmas em que o aluno está matriculado
     const turmasAluno = await prisma.turmaAluno.findMany({
-      where: { idAluno: alunoId },
+      where: { idAluno },
       select: { idTurma: true },
     });
-    const turmaIds = turmasAluno.map((t) => t.idTurma);
+    const turmaIds = turmasAluno.map((t: { idTurma: any }) => t.idTurma);
     if (turmaIds.length === 0) {
       return res.status(200).json({ atividades: [] });
     }
@@ -51,7 +51,7 @@ export default async function handler(
         atividade: {
           include: {
             arquivos: true,
-            alternativas: true, // agora incluindo alternativas também
+            alternativas: false, // altere para true se precisar das alternativas também
           },
         },
         turma: true,
