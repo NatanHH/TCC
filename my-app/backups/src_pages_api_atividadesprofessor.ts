@@ -13,7 +13,6 @@ export default async function handler(
           alternativas: true,
           turmas: true,
         },
-        orderBy: { idAtividade: "desc" },
       });
       return res.status(200).json(atividades);
     } catch (e: any) {

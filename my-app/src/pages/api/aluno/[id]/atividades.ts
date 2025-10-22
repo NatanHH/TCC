@@ -39,7 +39,7 @@ export default async function handler(
       where: { idAluno },
       select: { idTurma: true },
     });
-    const turmaIds = turmasAluno.map((t) => t.idTurma);
+    const turmaIds = turmasAluno.map((t: { idTurma: any }) => t.idTurma);
     if (turmaIds.length === 0) {
       return res.status(200).json({ atividades: [] });
     }

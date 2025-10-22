@@ -4,40 +4,6 @@ import styles from "./page.module.css";
 import React from "react";
 import { useRouter } from "next/navigation";
 
-// Small helper implementations for downloading/previewing attachments kept in-file
-// to avoid relying on a missing external module (../../lib/download).
-
-async function downloadAttachmentFetch(
-  idArquivo: number
-): Promise<Blob | null> {
-  try {
-    const res = await fetch(`/api/arquivos/${idArquivo}`);
-    if (!res.ok) {
-      console.error("Failed to fetch attachment:", res.status, res.statusText);
-      return null;
-    }
-    const blob = await res.blob();
-    return blob;
-  } catch (err) {
-    console.error("downloadAttachmentFetch error:", err);
-    return null;
-  }
-}
-
-function downloadAttachmentOpen(idArquivo: number) {
-  // Fetch the file as a blob and open it in a new tab (preserves cookie-based auth).
-  downloadAttachmentFetch(idArquivo).then((blob) => {
-    if (!blob) {
-      alert("Erro ao baixar o arquivo.");
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    // Revoke the object URL after a short delay to free memory.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  });
-}
-
 // Tipos
 type Turma = {
   idTurma: number;
@@ -52,10 +18,9 @@ type Atividade = {
   nota?: number;
 };
 
-type Anexo = {
-  idArquivo: number;
-  url: string;
-  tipoArquivo?: string;
+const desempenhoFixo = {
+  tituloAtividade: "Contagem Binária",
+  alunos: [{ nome: "João", acertos: "8/10" }],
 };
 
 export default function PageProfessor() {
@@ -78,7 +43,7 @@ export default function PageProfessor() {
   const [modalTurmaAberto, setModalTurmaAberto] = useState(false);
   const [modalDesempenhoAberto, setModalDesempenhoAberto] = useState(false);
 
-  // Estados para criação de turma (mantive seus estados)
+  // Estados para criar turma
   const [nomeTurma, setNomeTurma] = useState("");
   const [alunos, setAlunos] = useState<
     { nome: string; email: string; senha: string }[]
@@ -92,22 +57,15 @@ export default function PageProfessor() {
   });
   const [loadingTurmas, setLoadingTurmas] = useState(false);
 
-  // Modal para aplicar atividade
+  // Modal para aplicar atividade (seleção de turma)
   const [modalAplicarAberto, setModalAplicarAberto] = useState(false);
   const [atividadeParaAplicar, setAtividadeParaAplicar] =
     useState<Atividade | null>(null);
+
+  // Estado para confirmar aplicação (após selecionar turma)
   const [turmaSelecionadaParaAplicacao, setTurmaSelecionadaParaAplicacao] =
     useState<Turma | null>(null);
   const [confirmApplyModalOpen, setConfirmApplyModalOpen] = useState(false);
-
-  // Novos estados para download de anexos (reutilizados tanto para lista quanto detalhe)
-  const [attachmentsModalOpen, setAttachmentsModalOpen] = useState(false);
-  const [attachmentsForModal, setAttachmentsForModal] = useState<
-    Anexo[] | null
-  >(null);
-  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
-  const [attachmentsActivityTitle, setAttachmentsActivityTitle] =
-    useState<string>("");
 
   // Busca professorId do localStorage, e turmas do professor
   useEffect(() => {
@@ -136,7 +94,7 @@ export default function PageProfessor() {
   async function fetchTurmas() {
     setLoadingTurmas(true);
     const res = await fetch(`/api/turmasprofessor?professorId=${professorId}`);
-    const data = await res.json().catch(() => []);
+    const data = await res.json();
     if (res.ok) setTurmas(data);
     else setTurmas([]);
     setLoadingTurmas(false);
@@ -145,16 +103,20 @@ export default function PageProfessor() {
   async function fetchAtividades() {
     setLoadingAtividades(true);
     const res = await fetch(`/api/atividadesprofessor`);
-    const data = await res.json().catch(() => []);
-    if (res.ok) setAtividades(data);
-    else setAtividades([]);
+    const data = await res.json();
+    if (res.ok) {
+      if (Array.isArray(data)) setAtividades(data);
+      else if (data && Array.isArray(data.atividades))
+        setAtividades(data.atividades);
+      else setAtividades([]);
+    } else setAtividades([]);
     setLoadingAtividades(false);
   }
 
   async function fetchAtividadesTurma(idTurma: number) {
     setLoadingAtividades(true);
     const res = await fetch(`/api/atividadesturma?turmaId=${idTurma}`);
-    const data = await res.json().catch(() => []);
+    const data = await res.json();
     if (res.ok) setAtividadesTurma(data);
     else setAtividadesTurma([]);
     setLoadingAtividades(false);
@@ -167,6 +129,8 @@ export default function PageProfessor() {
   }
 
   function mostrarDetalheAtividade(atividade: Atividade) {
+    // abre o painel central de detalhe (como no frame 5 do Figma),
+    // neste painel haverá APENAS o botão Aplicar em turma + Voltar
     setAtividadeDetalhe(atividade);
   }
 
@@ -201,7 +165,11 @@ export default function PageProfessor() {
     const res = await fetch("/api/turma", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nomeTurma, professorId, alunos }),
+      body: JSON.stringify({
+        nomeTurma,
+        professorId,
+        alunos,
+      }),
     });
     const data = await res.json();
     if (res.ok) {
@@ -257,11 +225,12 @@ export default function PageProfessor() {
     setAlunos(alunos.filter((_, i) => i !== idx));
   }
 
-  // Modal Aplicar Atividade
+  // Modal Aplicar Atividade (abre seleção de turma)
   function abrirModalAplicar(atividade: Atividade) {
     setAtividadeParaAplicar(atividade);
     setModalAplicarAberto(true);
-    setTurmaSelecionadaParaAplicacao(null); // reset selection when opening
+    // reset selected turma/confirm states
+    setTurmaSelecionadaParaAplicacao(null);
     setConfirmApplyModalOpen(false);
   }
   function fecharModalAplicar() {
@@ -271,9 +240,10 @@ export default function PageProfessor() {
     setConfirmApplyModalOpen(false);
   }
 
+  // Ao selecionar uma turma no modal de aplicar, vou abrir o modal de confirmação
   function selecionarTurmaParaAplicar(turma: Turma) {
-    // legacy function still available but not used in single-step flow
     setTurmaSelecionadaParaAplicacao(turma);
+    // fecha o modal de seleção e abre o modal de confirmação
     setModalAplicarAberto(false);
     setConfirmApplyModalOpen(true);
   }
@@ -306,8 +276,6 @@ export default function PageProfessor() {
           fetchAtividadesTurma(idTurma);
         }
         fetchTurmas();
-        // close abrirModalAplicar if opened
-        fecharModalAplicar();
       } else {
         alert(data.error || "Erro ao aplicar atividade.");
       }
@@ -322,52 +290,6 @@ export default function PageProfessor() {
     }
   }
 
-  // --- NOVO: download via painel de detalhe ---
-  async function downloadAttachmentsForActivity(targetActivity?: Atividade) {
-    const atividade = targetActivity || atividadeDetalhe;
-    if (!atividade) {
-      alert("Atividade inválida.");
-      return;
-    }
-
-    setAttachmentsLoading(true);
-    try {
-      const res = await fetch(
-        `/api/atividades/${atividade.idAtividade}/attachments`
-      );
-      if (!res.ok) {
-        alert("Erro ao buscar anexos.");
-        return;
-      }
-      const json = await res.json();
-      const anexos: Anexo[] = json.anexos || [];
-
-      if (anexos.length === 0) {
-        alert("Nenhum anexo disponível para esta atividade.");
-      } else if (anexos.length === 1) {
-        // download direto (abre em nova aba). If cookie-based auth is used, this is fine.
-        downloadAttachmentOpen(anexos[0].idArquivo);
-      } else {
-        // multiple attachments -> open modal listing them
-        setAttachmentsForModal(anexos);
-        setAttachmentsActivityTitle(atividade.titulo);
-        setAttachmentsModalOpen(true);
-      }
-    } catch (err) {
-      console.error("Erro ao buscar anexos:", err);
-      alert("Erro ao buscar anexos.");
-    } finally {
-      setAttachmentsLoading(false);
-    }
-  }
-
-  function closeAttachmentsModal() {
-    setAttachmentsModalOpen(false);
-    setAttachmentsForModal(null);
-    setAttachmentsActivityTitle("");
-  }
-
-  // Router
   const router = useRouter();
 
   return (
@@ -464,8 +386,8 @@ export default function PageProfessor() {
             width: "100%",
           }}
         >
+          {/* Se uma atividade estiver selecionada, exibe o detalhe central */}
           {atividadeDetalhe ? (
-            // painel de detalhe - agora with "Baixar Anexos" + "Aplicar Atividade" + "Voltar"
             <div
               className={styles.card}
               style={{
@@ -482,10 +404,11 @@ export default function PageProfessor() {
                 {atividadeDetalhe.descricao ||
                   "Sem descrição fornecida para esta atividade."}
               </p>
+
               <div style={{ display: "flex", gap: 12 }}>
                 <button
                   onClick={() => abrirModalAplicar(atividadeDetalhe)}
-                  className={styles.btnAplicar}
+                  className={styles.btn}
                   style={{
                     background: "#00bcd4",
                     color: "#fff",
@@ -498,27 +421,11 @@ export default function PageProfessor() {
                 </button>
 
                 <button
-                  onClick={() =>
-                    downloadAttachmentsForActivity(atividadeDetalhe)
-                  }
-                  className={styles.btnAplicar}
-                  style={{
-                    background: "#11a6d6",
-                    color: "#fff",
-                    padding: "8px 14px",
-                    borderRadius: 8,
-                    cursor: "pointer",
-                  }}
-                >
-                  {attachmentsLoading ? "..." : "Baixar Anexos"}
-                </button>
-
-                <button
                   onClick={voltarParaLista}
-                  className={styles.btnVoltar}
+                  className={styles.btn}
                   style={{
-                    background: "transparent",
-                    color: "#ffdede",
+                    background: "#b71c1c",
+                    color: "#fff",
                     padding: "8px 14px",
                     borderRadius: 8,
                     cursor: "pointer",
@@ -530,6 +437,7 @@ export default function PageProfessor() {
               </div>
             </div>
           ) : (
+            // Lista principal - todas as atividades criadas pelo admin (SEM botões na lista)
             <>
               <h2 style={{ color: "#fff", margin: "20px 0" }}>
                 Atividades disponíveis para aplicar
@@ -570,7 +478,8 @@ export default function PageProfessor() {
                         </span>
                       </div>
 
-                      {/* botão de download removido da lista inicial conforme solicitado */}
+                      {/* Removed quick action buttons from the list cards as requested.
+                          The only action on the card now is clicking the card to open the detail view. */}
                     </li>
                   ))}
                 </ul>
@@ -579,25 +488,12 @@ export default function PageProfessor() {
           )}
         </div>
 
-        {/* Modal para seleção de turma (nova versão: lista com seleção + aplicar) */}
-        <div
-          className={`${styles.modal} ${
-            modalAplicarAberto ? styles.modalActive : ""
-          }`}
-        >
-          <div className={styles.modalContent}>
-            <h2>
-              Aplicar "{atividadeParaAplicar ? atividadeParaAplicar.titulo : ""}
-              " em qual turma?
-            </h2>
-
-            {loadingTurmas && <p>Carregando turmas...</p>}
-
-            {!loadingTurmas && turmas.length === 0 && (
-              <p>Nenhuma turma disponível. Crie uma turma primeiro.</p>
-            )}
-
-            {!loadingTurmas && turmas.length > 0 && (
+        {/* Modal para aplicar atividade em turma (seleção de turma) */}
+        {modalAplicarAberto && atividadeParaAplicar && (
+          <div className={styles.modal}>
+            <div className={styles.modalContent}>
+              <h2>Aplicar "{atividadeParaAplicar.titulo}" em qual turma?</h2>
+              {turmas.length === 0 && <p>Nenhuma turma disponível.</p>}
               <div
                 style={{
                   display: "flex",
@@ -606,183 +502,81 @@ export default function PageProfessor() {
                   marginTop: 12,
                 }}
               >
-                {turmas.map((t) => {
-                  const selected =
-                    turmaSelecionadaParaAplicacao?.idTurma === t.idTurma;
-                  return (
-                    <button
-                      key={t.idTurma}
-                      onClick={() => setTurmaSelecionadaParaAplicacao(t)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "12px 14px",
-                        borderRadius: 10,
-                        background: selected
-                          ? "linear-gradient(90deg, rgba(0,188,212,0.12), rgba(0,188,212,0.06))"
-                          : "linear-gradient(180deg,#40305a,#3a2b4f)",
-                        border: selected
-                          ? "2px solid #00bcd4"
-                          : "1px solid rgba(255,255,255,0.04)",
-                        color: "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ textAlign: "left" }}>
-                        <div style={{ fontWeight: 700 }}>{t.nome}</div>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            color: "#dcd7ee",
-                            marginTop: 4,
-                          }}
-                        >
-                          {t.alunos?.length ?? 0} alunos
-                        </div>
-                      </div>
-
-                      <div>
-                        <input
-                          type="radio"
-                          name="turmaSelect"
-                          checked={selected}
-                          readOnly
-                          aria-label={`Selecionar turma ${t.nome}`}
-                        />
-                      </div>
-                    </button>
-                  );
-                })}
+                {turmas.map((turma) => (
+                  <button
+                    key={turma.idTurma}
+                    onClick={() => selecionarTurmaParaAplicar(turma)}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      background: "#3a3360",
+                      color: "#fff",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                      textAlign: "left",
+                    }}
+                  >
+                    {turma.nome}
+                  </button>
+                ))}
+                <button onClick={fecharModalAplicar} style={{ marginTop: 12 }}>
+                  Cancelar
+                </button>
               </div>
-            )}
-
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                marginTop: 16,
-                justifyContent: "flex-end",
-              }}
-            >
-              <button
-                onClick={fecharModalAplicar}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  background: "#b71c1c",
-                  color: "#fff",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                Cancelar
-              </button>
-
-              <button
-                onClick={() => {
-                  if (!turmaSelecionadaParaAplicacao) {
-                    alert("Selecione uma turma antes de aplicar.");
-                    return;
-                  }
-                  aplicarAtividadeEmTurma(
-                    turmaSelecionadaParaAplicacao.idTurma
-                  );
-                }}
-                disabled={!turmaSelecionadaParaAplicacao}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  background: turmaSelecionadaParaAplicacao
-                    ? "#00bcd4"
-                    : "rgba(0,188,212,0.4)",
-                  color: "#fff",
-                  border: "none",
-                  cursor: turmaSelecionadaParaAplicacao
-                    ? "pointer"
-                    : "not-allowed",
-                }}
-              >
-                Aplicar na Turma
-              </button>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Modal de anexos (quando houver vários anexos) */}
-        <div
-          className={`${styles.modal} ${
-            attachmentsModalOpen ? styles.modalActive : ""
-          }`}
-        >
-          <div className={styles.modalContent}>
-            <h3>
-              Anexos da atividade:{" "}
-              <span style={{ color: "#00bcd4" }}>
-                {attachmentsActivityTitle}
-              </span>
-            </h3>
-            {attachmentsLoading && <p>Carregando...</p>}
-            {!attachmentsLoading &&
-              attachmentsForModal &&
-              attachmentsForModal.length === 0 && <p>Nenhum anexo.</p>}
-            {!attachmentsLoading &&
-              attachmentsForModal &&
-              attachmentsForModal.length > 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                    marginTop: 8,
-                  }}
-                >
-                  {attachmentsForModal.map((a) => (
-                    <div
-                      key={a.idArquivo}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: 8,
-                        background: "#332842",
-                        borderRadius: 8,
-                      }}
-                    >
-                      <div>
-                        <strong style={{ color: "#fff" }}>
-                          {a.url.split("/").pop()}
-                        </strong>
-                        <div style={{ color: "#dcd7ee", fontSize: 13 }}>
-                          {a.tipoArquivo || "arquivo"}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          onClick={() => downloadAttachmentOpen(a.idArquivo)}
-                          className={styles.btnAplicar}
-                          style={{ background: "#00bcd4" }}
-                        >
-                          Baixar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+        {/* Modal de confirmação - aparece após o usuário selecionar a turma */}
+        {confirmApplyModalOpen &&
+          atividadeParaAplicar &&
+          turmaSelecionadaParaAplicacao && (
+            <div className={styles.modal}>
+              <div className={styles.modalContent}>
+                <h3>Confirmar aplicação</h3>
+                <p>
+                  Deseja realmente aplicar a atividade{" "}
+                  <strong>"{atividadeParaAplicar.titulo}"</strong> na turma{" "}
+                  <strong>{turmaSelecionadaParaAplicacao.nome}</strong>?
+                </p>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button
+                    onClick={confirmarEAplicar}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      background: "#00bcd4",
+                      color: "#fff",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Sim, aplicar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConfirmApplyModalOpen(false);
+                      setTurmaSelecionadaParaAplicacao(null);
+                      // mantemos a atividade para caso o professor queira reabrir seleção
+                      setAtividadeParaAplicar(null);
+                    }}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      background: "#b71c1c",
+                      color: "#fff",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancelar
+                  </button>
                 </div>
-              )}
-            <button
-              onClick={closeAttachmentsModal}
-              className={styles.btnVoltarModal}
-              style={{ marginTop: 12 }}
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
+              </div>
+            </div>
+          )}
 
-        {/* Outros modais e componentes (criar turma, desempenho, etc.) mantidos conforme seu código anterior */}
-
-        {/* Modal de criação de turma adaptado (mantido do seu código) */}
+        {/* Modal de criação de turma adaptado */}
         <div
           className={`${styles.modal} ${
             modalTurmaAberto ? styles.modalActive : ""
@@ -898,7 +692,7 @@ export default function PageProfessor() {
           </div>
         </div>
 
-        {/* Modal de Desempenho (mantido) */}
+        {/* Modal de Desempenho */}
         <div
           className={`${styles.modal} ${
             modalDesempenhoAberto ? styles.modalActive : ""
@@ -911,15 +705,23 @@ export default function PageProfessor() {
               Desempenho da Turma na Atividade:
               <br />
               <span style={{ color: "#00bcd4" }}>
-                {atividadeDetalhe ? atividadeDetalhe.titulo : "Desempenho"}
+                {atividadeDetalhe
+                  ? atividadeDetalhe.titulo
+                  : desempenhoFixo.tituloAtividade}
               </span>
             </h2>
-            <div className={styles.desempenhoLinha}>
-              <span>João</span>
-              <span>
-                Acertos: <span className={styles.acertosBadge}>8/10</span>
-              </span>
-            </div>
+            {(atividadeDetalhe
+              ? desempenhoFixo.alunos
+              : desempenhoFixo.alunos
+            ).map((aluno, idx) => (
+              <div className={styles.desempenhoLinha} key={idx}>
+                <span>{aluno.nome}</span>
+                <span>
+                  Acertos:
+                  <span className={styles.acertosBadge}>{aluno.acertos}</span>
+                </span>
+              </div>
+            ))}
             <button
               className={styles.btnVoltarModal}
               onClick={fecharModalDesempenho}

@@ -16,14 +16,12 @@ export default async function handler(
       return res.status(401).json({ error: "Email ou senha incorretos" });
     }
     // Autenticado com sucesso!
-    return res
-      .status(200)
-      .json({
-        success: true,
-        idProfessor: professor.idProfessor,
-        nome: professor.nome,
-        email: professor.email,
-      });
+    return res.status(200).json({
+      success: true,
+      idProfessor: professor.idProfessor,
+      nome: professor.nome,
+      email: professor.email,
+    });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
