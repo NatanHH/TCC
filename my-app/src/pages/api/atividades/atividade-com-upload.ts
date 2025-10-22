@@ -1,18 +1,10 @@
-// Optional: single endpoint to create an activity + upload files in the same multipart request.
-// Use if you prefer one-call atomic creation. Otherwise use separate endpoints.
-//
-// POST fields expected (FormData):
-// - titulo, descricao, tipo, nota (optional), script (if PLUGGED), linguagem
-// - alternativas: JSON string or array (optional)
-// - correctIndex (optional)
-// - arquivos[] files
 import type { NextApiRequest, NextApiResponse } from "next";
 import nextConnect from "next-connect";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import prisma from "../../lib/prisma";
+import prisma from "../../../lib/prisma";
 
 export const config = { api: { bodyParser: false } };
 
@@ -31,7 +23,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 const handler = (nextConnect as any)({
-  onError(err: any, _req: NextApiRequest, res: NextApiResponse) {
+  onError(err: Error, _req: NextApiRequest, res: NextApiResponse) {
     console.error("atividade-com-upload error:", err);
     res.status(500).json({ error: "Erro interno" });
   },
@@ -43,7 +35,7 @@ const handler = (nextConnect as any)({
 
 handler.use(upload.array("arquivos"));
 
-handler.post(async (req: NextApiRequest & { files?: Express.Multer.File[]; body: any }, res: NextApiResponse) => {
+handler.post(async (req: any, res: NextApiResponse) => {
   try {
     const {
       titulo,
@@ -57,9 +49,7 @@ handler.post(async (req: NextApiRequest & { files?: Express.Multer.File[]; body:
     } = req.body;
 
     if (!titulo || !tipo) {
-      // cleanup files
-      const files = req.files as Express.Multer.File[] | undefined;
-      for (const f of files ?? [])
+      for (const f of req.files ?? [])
         try {
           fs.unlinkSync(f.path);
         } catch {}
@@ -109,10 +99,10 @@ handler.post(async (req: NextApiRequest & { files?: Express.Multer.File[]; body:
     const files = req.files as Express.Multer.File[] | undefined;
     if (files && files.length > 0) {
       for (const f of files) {
-        const fileUrl = `/upload/${path.basename(f.filename)}`;
+        const url = `/upload/${path.basename(f.filename)}`;
         const rec = await prisma.atividadeArquivo.create({
           data: {
-            url: fileUrl,
+            url,
             tipoArquivo: f.mimetype,
             atividadeId: atividadeCriada.idAtividade,
           },

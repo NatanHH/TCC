@@ -37,6 +37,7 @@ export default function PainelAdm() {
     descricao: "",
     tipo: "PLUGGED",
     nota: 10,
+    // reinseri os campos script e linguagem para PLUGGED
     script: "",
     linguagem: "assemblyscript",
   });
@@ -185,22 +186,47 @@ export default function PainelAdm() {
       alert("As senhas não coincidem!");
       return;
     }
-    const res = await fetch("/api/professor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nome: formData.nome,
-        email: formData.email,
-        senha: formData.senha,
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("Professor criado!");
-      setShowForm(false);
-      await fetchProfessores();
-    } else {
-      alert(data.error || "Erro ao criar professor.");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/professor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: formData.nome,
+          email: formData.email,
+          senha: formData.senha,
+        }),
+      });
+
+      // tenta parsear JSON; se falhar, lê texto para debug
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => "(sem corpo legível)");
+        console.error("Resposta não-JSON ao criar professor:", {
+          status: res.status,
+          body: text,
+        });
+        alert(
+          `Erro ao criar professor: servidor retornou status ${res.status}. Veja console.`
+        );
+        return;
+      }
+
+      if (res.ok) {
+        alert("Professor criado!");
+        setShowForm(false);
+        setFormData({ nome: "", email: "", senha: "", confirmarSenha: "" });
+        await fetchProfessores();
+      } else {
+        alert(data?.error || `Erro ao criar professor (status ${res.status}).`);
+      }
+    } catch (err) {
+      console.error("Erro ao criar professor:", err);
+      alert("Erro ao criar professor (ver console).");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -253,14 +279,14 @@ export default function PainelAdm() {
     setCorrectIndex(index);
   }
 
+  // Substitua a função existente por esta. Ela trata respostas não-JSON e loga o body para debug.
   async function handleFormAtividadeSubmit(
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
 
-    // Validations for PLUGGED
+    // Validações PLUGGED
     if (formAtividade.tipo === "PLUGGED") {
-      // ensure at least one alternativa with text
       const filled = alternativas.map((a) => a.texto?.trim()).filter(Boolean);
       if (filled.length === 0) {
         alert("Adicione pelo menos uma alternativa para atividades PLUGGED.");
@@ -272,71 +298,105 @@ export default function PainelAdm() {
       }
     }
 
-    // 1. Cria a atividade
+    const payload: any = {
+      titulo: formAtividade.titulo,
+      descricao: formAtividade.descricao,
+      tipo: formAtividade.tipo,
+      linguagem: formAtividade.linguagem ?? null,
+      script:
+        formAtividade.tipo === "PLUGGED" ? formAtividade.script : undefined,
+    };
+
+    // alternativas: enviar só texto
+    if (formAtividade.tipo === "PLUGGED") {
+      payload.alternativas = alternativas
+        .map((a: any) => ({ texto: a.texto ?? "" }))
+        .filter((a: any) => a.texto.trim() !== "");
+      payload.correctIndex = correctIndex; // opcional
+    }
+
     try {
-      const payload: any = {
-        titulo: formAtividade.titulo,
-        descricao: formAtividade.descricao,
-        tipo: formAtividade.tipo,
-        nota: formAtividade.nota,
-        script: formAtividade.tipo === "PLUGGED" ? formAtividade.script : null,
-        linguagem:
-          formAtividade.tipo === "PLUGGED" && formAtividade.linguagem
-            ? formAtividade.linguagem
-            : null,
-      };
-
-      if (formAtividade.tipo === "PLUGGED") {
-        // attach alternativas array (texto + correta boolean)
-        payload.alternativas = alternativas
-          .map((a, i) => ({
-            texto: a.texto || "",
-            correta: i === correctIndex,
-          }))
-          .filter((a) => a.texto.trim() !== "");
-      }
-
       const res = await fetch("/api/atividade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      if (!res.ok) {
+        // tenta ler body como texto para debug
+        const text = await res.text().catch(() => "<no-body>");
+        console.error("POST /api/atividade failed", res.status, text);
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch {}
+        alert(
+          json?.error ||
+            `Erro interno ao criar atividade (status ${res.status})`
+        );
+        return;
+      }
 
-      if (res.ok) {
-        // 2. Se for UNPLUGGED, faz upload dos arquivos
-        if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
+      const data = await res.json();
+      // sucesso: continue fluxo
+
+      const idAtividade = data?.idAtividade ?? data?.id ?? null;
+
+      // upload se UNPLUGGED
+      if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
+        if (!idAtividade) {
+          console.warn(
+            "Atividade criada mas id não retornado; cancelando upload."
+          );
+        } else {
           const formDataUpload = new FormData();
           arquivos.forEach((file) => formDataUpload.append("arquivos", file));
-          formDataUpload.append("atividadeId", data.idAtividade);
+          formDataUpload.append("atividadeId", String(idAtividade));
 
-          await fetch("/api/upload-arquivos-atividade", {
+          const upRes = await fetch("/api/upload-arquivos-atividade", {
             method: "POST",
             body: formDataUpload,
           });
+          let upJson: any = null;
+          try {
+            upJson = await upRes.json();
+          } catch {
+            const t = await upRes.text().catch(() => "");
+            console.error("Upload retornou não-JSON:", upRes.status, t);
+            alert(`Erro no upload (status ${upRes.status}). Veja console.`);
+            return;
+          }
+          if (!upRes.ok) {
+            console.error("Erro no upload:", upRes.status, upJson);
+            alert(upJson?.error || `Erro no upload (status ${upRes.status})`);
+            return;
+          }
         }
-
-        alert("Atividade criada!");
-        // reset form
-        setFormAtividade({
-          titulo: "",
-          descricao: "",
-          tipo: "PLUGGED",
-          nota: 10,
-          script: "",
-          linguagem: "assemblyscript",
-        });
-        setArquivos([]);
-        setAlternativas([{ texto: "" }, { texto: "" }]);
-        setCorrectIndex(null);
-        fetchAtividades();
-      } else {
-        alert(data.error || "Erro ao criar atividade.");
       }
+
+      alert("Atividade criada com sucesso!");
+      // reset do form (simplificado)
+      setFormAtividade({
+        titulo: "",
+        descricao: "",
+        tipo: "PLUGGED",
+        nota: 10,
+        script: "",
+        linguagem: "assemblyscript",
+      });
+      arquivosPreviews.forEach((u) => {
+        try {
+          URL.revokeObjectURL(u);
+        } catch {}
+      });
+      setArquivos([]);
+      setArquivosPreviews([]);
+      setAlternativas([{ texto: "" }, { texto: "" }]);
+      setCorrectIndex(null);
+      fetchAtividades();
     } catch (err) {
-      console.error("Erro ao criar atividade:", err);
-      alert("Erro ao criar atividade (ver console).");
+      console.error("Erro inesperado ao criar atividade:", err);
+      alert("Erro inesperado ao criar atividade. Veja o console.");
     }
   }
 
@@ -671,7 +731,6 @@ export default function PainelAdm() {
                 className={styles.input}
               />
 
-              {/* Se for PLUGGED, aparece o campo de script, linguagem e alternativas */}
               {formAtividade.tipo === "PLUGGED" && (
                 <>
                   <label style={{ color: "#fff", fontWeight: 600 }}>
@@ -735,10 +794,10 @@ export default function PainelAdm() {
                     </div>
                   </div>
 
+                  {/* Re-adicionei campos opcionais para PLUGGED: script + linguagem */}
                   <textarea
                     name="script"
-                    placeholder="Script da atividade (código)"
-                    required
+                    placeholder="Script da atividade (código) — opcional"
                     value={formAtividade.script}
                     onChange={handleFormAtividadeChange}
                     className={styles.input}
@@ -747,8 +806,7 @@ export default function PainelAdm() {
                   <input
                     name="linguagem"
                     type="text"
-                    placeholder="Linguagem (ex: assemblyscript)"
-                    required
+                    placeholder="Linguagem (ex: assemblyscript) — opcional"
                     value={formAtividade.linguagem}
                     onChange={handleFormAtividadeChange}
                     className={styles.input}
@@ -756,7 +814,6 @@ export default function PainelAdm() {
                 </>
               )}
 
-              {/* Se for UNPLUGGED, aparece o campo de upload */}
               {formAtividade.tipo === "UNPLUGGED" && (
                 <>
                   <label>

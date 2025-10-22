@@ -1,4 +1,3 @@
-// Prisma client singleton to avoid multiple instances in dev (Next.js hot reload)
 import { PrismaClient } from "@prisma/client";
 
 declare global {
@@ -6,6 +5,7 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
+// Criar singleton para evitar múltiplas instâncias em dev (hot reload)
 const prisma = global.prisma || new PrismaClient();
 
 if (process.env.NODE_ENV !== "production") global.prisma = prisma;
