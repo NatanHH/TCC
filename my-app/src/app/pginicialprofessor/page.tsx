@@ -5,6 +5,12 @@ import React from "react";
 import { useRouter } from "next/navigation";
 
 // Tipos
+type Arquivo = {
+  idArquivo?: number;
+  url: string;
+  tipoArquivo?: string;
+};
+
 type Turma = {
   idTurma: number;
   nome: string;
@@ -16,6 +22,7 @@ type Atividade = {
   descricao?: string;
   tipo?: string;
   nota?: number;
+  arquivos?: Arquivo[]; // ADICIONADO: possíveis arquivos anexados (UNPLUGGED)
 };
 
 const desempenhoFixo = {
@@ -181,7 +188,7 @@ export default function PageProfessor() {
 
   function mostrarDetalheAtividade(atividade: Atividade) {
     // abre o painel central de detalhe (como no frame 5 do Figma),
-    // neste painel haverá APENAS o botão Aplicar em turma + Voltar
+    // neste painel haverá APENAS o botão Aplicar em turma + Voltar + ABRIR (quando UNPLUGGED com arquivos)
     setAtividadeDetalhe(atividade);
   }
 
@@ -343,6 +350,26 @@ export default function PageProfessor() {
 
   const router = useRouter();
 
+  // --- NOVO: função para abrir o arquivo anexado da atividade (abre em nova aba)
+  function openAtividadeArquivo(atividade: Atividade) {
+    try {
+      const arquivos = atividade.arquivos ?? [];
+      if (arquivos.length === 0) {
+        alert("Nenhum arquivo anexado para esta atividade.");
+        return;
+      }
+      // abre o primeiro arquivo; se quiser abrir todos, iterar e abrir cada um
+      const url = arquivos[0].url;
+      const finalUrl = url.startsWith("http")
+        ? url
+        : `${window.location.origin}${url}`;
+      window.open(finalUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Erro ao abrir arquivo da atividade:", err);
+      alert("Não foi possível abrir o arquivo. Veja o console.");
+    }
+  }
+
   return (
     <div className={styles.paginaAlunoBody}>
       <aside className={styles.paginaAlunoAside}>
@@ -457,6 +484,25 @@ export default function PageProfessor() {
               </p>
 
               <div style={{ display: "flex", gap: 12 }}>
+                {/* Novo botão ABRIR - só aparece se atividade for UNPLUGGED e houver arquivos */}
+                {atividadeDetalhe.tipo === "UNPLUGGED" &&
+                  (atividadeDetalhe.arquivos ?? []).length > 0 && (
+                    <button
+                      onClick={() => openAtividadeArquivo(atividadeDetalhe)}
+                      className={styles.btn}
+                      style={{
+                        background: "#4caf50",
+                        color: "#fff",
+                        padding: "8px 14px",
+                        borderRadius: 8,
+                        cursor: "pointer",
+                      }}
+                      title="Abrir arquivo anexado"
+                    >
+                      ABRIR
+                    </button>
+                  )}
+
                 <button
                   onClick={() => abrirModalAplicar(atividadeDetalhe)}
                   className={styles.btn}
