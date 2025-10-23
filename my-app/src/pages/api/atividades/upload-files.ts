@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 
 function runMulter(req: NextApiRequest, res: NextApiResponse) {
   return new Promise<void>((resolve, reject) => {
@@ -42,66 +42,48 @@ export default async function handler(
   try {
     await runMulter(req, res);
 
-    const {
-      titulo,
-      descricao,
-      tipo,
-      script,
-      linguagem,
-      alternativas: alternativasCampo,
-      correctIndex,
-      nota,
-    } = (req as any).body ?? {};
+    const body: any = (req as any).body ?? {};
+    const atividadeId = Number(
+      body.atividadeId || body.atividade_id || body.id
+    );
+    const replace = body.replace === "true" || body.replace === true;
 
-    if (!titulo || !tipo) {
+    if (!atividadeId || Number.isNaN(atividadeId)) {
+      // cleanup uploaded files
       for (const f of (req as any).files ?? []) {
         try {
           fs.unlinkSync((f as any).path);
         } catch {}
       }
-      return res.status(400).json({ error: "titulo e tipo são obrigatórios" });
+      return res.status(400).json({ error: "atividadeId inválido" });
     }
 
-    let alternativasParsed: any[] = [];
-    if (alternativasCampo) {
-      if (typeof alternativasCampo === "string") {
-        try {
-          alternativasParsed = JSON.parse(alternativasCampo);
-        } catch {
-          alternativasParsed = [];
+    // If replace=true, remove existing files (physical + DB) for this activity
+    if (replace) {
+      try {
+        const existing = await prisma.atividadeArquivo.findMany({
+          where: { atividadeId },
+        });
+        for (const ef of existing) {
+          try {
+            const filePath = path.join(
+              process.cwd(),
+              "public",
+              ef.url.replace(/^\//, "")
+            );
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          } catch (e) {
+            console.warn("Erro apagando arquivo antigo:", e);
+          }
         }
-      } else {
-        alternativasParsed = alternativasCampo;
+        await prisma.atividadeArquivo.deleteMany({ where: { atividadeId } });
+      } catch (e) {
+        console.warn("Falha ao remover arquivos antigos (continuando):", e);
       }
     }
 
-    const atividadeData: any = {
-      titulo,
-      descricao: descricao || null,
-      tipo,
-      script: script || null,
-      linguagem: linguagem || null,
-    };
-    if (nota) atividadeData.nota = Number(nota);
-
-    if (Array.isArray(alternativasParsed) && alternativasParsed.length > 0) {
-      atividadeData.alternativas = {
-        create: alternativasParsed.map((a: any, i: number) => ({
-          texto: a.texto ?? String(a),
-          correta:
-            typeof a.correta === "boolean"
-              ? a.correta
-              : Number(correctIndex) === i,
-        })),
-      };
-    }
-
-    const atividadeCriada = await prisma.atividade.create({
-      data: atividadeData,
-    });
-
-    const createdFiles: any[] = [];
     const files = (req as any).files as Express.Multer.File[] | undefined;
+    const createdFiles: any[] = [];
     if (files && files.length > 0) {
       for (const f of files) {
         const url = `/upload/${path.basename(f.filename)}`;
@@ -109,18 +91,16 @@ export default async function handler(
           data: {
             url,
             tipoArquivo: f.mimetype,
-            atividadeId: atividadeCriada.idAtividade,
+            atividadeId,
           },
         });
         createdFiles.push(rec);
       }
     }
 
-    return res
-      .status(201)
-      .json({ atividade: atividadeCriada, arquivos: createdFiles });
+    return res.status(201).json({ created: createdFiles });
   } catch (err: any) {
-    console.error("atividade-com-upload error:", err);
+    console.error("upload-files error:", err);
     // cleanup physical files if multer saved them
     for (const f of (req as any).files ?? []) {
       try {

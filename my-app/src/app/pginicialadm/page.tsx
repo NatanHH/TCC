@@ -1,11 +1,23 @@
-// NOTE: cole no mesmo local do seu painel_adm.tsx, substituindo o conteúdo existente
 "use client";
 import React, { useState, useEffect, ChangeEvent } from "react";
 import styles from "./page.module.css";
 
-// Painel do Administrador - Professores CRUD + Atividades CRUD (PLUGGED/UNPLUGGED)
+/**
+ * PainelAdm (com CRUD completo de Atividades e CRUD básico de Professores)
+ *
+ * - Lida com criação/edição/exclusão de atividades (PLUGGED/UNPLUGGED) e professores.
+ * - Para criação UNPLUGGED usa /api/atividades/atividade-com-upload (multipart).
+ * - Para atualizar arquivos de uma atividade existente usa /api/atividades/upload-files (multipart, replace=true).
+ *
+ * Cole este arquivo no lugar do seu painel ADM. Ajuste paths de API se necessário.
+ */
+
+type Professor = { idProfessor: number; nome: string; email: string };
+type Alt = { texto: string; id?: number };
+
 export default function PainelAdm() {
-  const [professores, setProfessores] = useState([]);
+  // Professores
+  const [professores, setProfessores] = useState<Professor[]>([]);
   const [funcaoSelecionada, setFuncaoSelecionada] = useState<string | null>(
     null
   );
@@ -16,11 +28,9 @@ export default function PainelAdm() {
     senha: "",
     confirmarSenha: "",
   });
-  const [editingProfessor, setEditingProfessor] = useState<null | {
-    idProfessor: number;
-    nome: string;
-    email: string;
-  }>(null);
+  const [editingProfessor, setEditingProfessor] = useState<null | Professor>(
+    null
+  );
   const [editFormData, setEditFormData] = useState({
     nome: "",
     senha: "",
@@ -37,147 +47,58 @@ export default function PainelAdm() {
     descricao: "",
     tipo: "PLUGGED",
     nota: 10,
-    // reinseri os campos script e linguagem para PLUGGED
     script: "",
     linguagem: "assemblyscript",
   });
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [arquivosPreviews, setArquivosPreviews] = useState<string[]>([]);
 
-  // Alternativas para atividades PLUGGED
-  type Alt = { texto: string; id?: number };
+  // Alternativas PLUGGED
   const [alternativas, setAlternativas] = useState<Alt[]>([
     { texto: "" },
     { texto: "" },
   ]);
   const [correctIndex, setCorrectIndex] = useState<number | null>(null);
 
-  // Buscar professores quando abrir painel ou fechar formulário
+  // Edit mode for Activities
+  const [editingAtividadeId, setEditingAtividadeId] = useState<number | null>(
+    null
+  );
+
+  // Optionally let user decide whether new files replace existing ones (only relevant when editing)
+  const [replaceFilesOnUpdate, setReplaceFilesOnUpdate] = useState(true);
+
+  // ---------------------- Professores CRUD (frontend) ----------------------
   useEffect(() => {
-    if (funcaoSelecionada === "Professores") {
-      fetchProfessores();
-    }
+    if (funcaoSelecionada === "Professores") fetchProfessores();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [funcaoSelecionada, showForm, editingProfessor]);
 
   async function fetchProfessores() {
     setLoading(true);
     try {
-      const res = await fetch("/api/professor");
-      const data = await res.json();
-      setProfessores(data);
-    } catch {
-      setProfessores([]);
-    }
-    setLoading(false);
-  }
-
-  // Buscar atividades quando abrir painel de atividades
-  useEffect(() => {
-    if (funcaoSelecionada === "Atividades") {
-      fetchAtividades();
-    }
-  }, [funcaoSelecionada]);
-
-  async function fetchAtividades() {
-    setLoadingAtividades(true);
-    try {
-      const res = await fetch("/api/atividade");
-      const data = await res.json();
+      const res = await fetch("/api/professores/professor");
+      const text = await res.text().catch(() => "");
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
       if (res.ok) {
-        // API may return either an array or an object like { atividades: [...] }
-        if (Array.isArray(data)) setAtividades(data);
-        else if (data && Array.isArray(data.atividades))
-          setAtividades(data.atividades);
-        else setAtividades([]);
-      } else setAtividades([]);
-    } catch {
-      setAtividades([]);
+        if (Array.isArray(data)) setProfessores(data);
+        else if (data && Array.isArray(data.professores))
+          setProfessores(data.professores);
+        else setProfessores([]);
+      } else {
+        setProfessores([]);
+      }
+    } catch (err) {
+      console.error("Erro fetching professores:", err);
+      setProfessores([]);
+    } finally {
+      setLoading(false);
     }
-    setLoadingAtividades(false);
-  }
-
-  function selecionarFuncao(funcao: string) {
-    setFuncaoSelecionada(funcao);
-    setShowForm(false);
-    setEditingProfessor(null);
-  }
-
-  function voltarMenu() {
-    setFuncaoSelecionada(null);
-    setShowForm(false);
-    setEditingProfessor(null);
-  }
-
-  function toggleUserPopup() {
-    setPopupAberto((prev) => !prev);
-  }
-
-  // EDITAR PROFESSOR
-  function handleEditar(prof: {
-    idProfessor: number;
-    nome: string;
-    email: string;
-  }) {
-    setEditingProfessor(prof);
-    setEditFormData({
-      nome: prof.nome,
-      senha: "",
-      confirmarSenha: "",
-    });
-  }
-
-  function handleEditChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setEditFormData({ ...editFormData, [e.target.name]: e.target.value });
-  }
-
-  async function handleEditSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (editFormData.senha !== editFormData.confirmarSenha) {
-      alert("As senhas não coincidem!");
-      return;
-    }
-    const res = await fetch("/api/professor", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        idProfessor: editingProfessor?.idProfessor,
-        nome: editFormData.nome,
-        senha: editFormData.senha,
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("Professor atualizado!");
-      setEditingProfessor(null);
-      await fetchProfessores();
-    } else {
-      alert(data.error || "Erro ao atualizar professor.");
-    }
-  }
-
-  async function handleExcluir(id: number) {
-    if (!confirm("Tem certeza que deseja excluir este professor?")) return;
-    const res = await fetch("/api/professor", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idProfessor: id }),
-    });
-    if (res.ok) {
-      await fetchProfessores();
-    } else {
-      const data = await res.json();
-      alert(data.error || "Erro ao excluir professor.");
-    }
-  }
-
-  function handleShowForm() {
-    setShowForm(true);
-    setFormData({ nome: "", email: "", senha: "", confirmarSenha: "" });
-    setEditingProfessor(null);
-  }
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -188,7 +109,7 @@ export default function PainelAdm() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/professor", {
+      const res = await fetch("/api/professores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,23 +118,14 @@ export default function PainelAdm() {
           senha: formData.senha,
         }),
       });
-
-      // tenta parsear JSON; se falhar, lê texto para debug
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        const text = await res.text().catch(() => "(sem corpo legível)");
-        console.error("Resposta não-JSON ao criar professor:", {
-          status: res.status,
-          body: text,
-        });
-        alert(
-          `Erro ao criar professor: servidor retornou status ${res.status}. Veja console.`
-        );
-        return;
-      }
-
+      const text = await res.text().catch(() => "");
+      const data = (() => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      })();
       if (res.ok) {
         alert("Professor criado!");
         setShowForm(false);
@@ -230,6 +142,128 @@ export default function PainelAdm() {
     }
   }
 
+  async function handleEditSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (editFormData.senha !== editFormData.confirmarSenha) {
+      alert("As senhas não coincidem!");
+      return;
+    }
+    try {
+      const res = await fetch("/api/professores", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idProfessor: editingProfessor?.idProfessor,
+          nome: editFormData.nome,
+          senha: editFormData.senha,
+        }),
+      });
+      const text = await res.text().catch(() => "");
+      const data = (() => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      })();
+      if (res.ok) {
+        alert("Professor atualizado!");
+        setEditingProfessor(null);
+        await fetchProfessores();
+      } else {
+        alert(data?.error || "Erro ao atualizar professor.");
+      }
+    } catch (err) {
+      console.error("Erro ao atualizar professor:", err);
+      alert("Erro ao atualizar professor.");
+    }
+  }
+
+  async function handleExcluirProfessor(id: number) {
+    if (!confirm("Tem certeza que deseja excluir este professor?")) return;
+    try {
+      const res = await fetch("/api/professores/professor", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idProfessor: id }),
+      });
+      const text = await res.text().catch(() => "");
+      const data = (() => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      })();
+      if (res.ok) {
+        await fetchProfessores();
+      } else {
+        alert(data?.error || "Erro ao excluir professor.");
+      }
+    } catch (err) {
+      console.error("Erro ao excluir professor:", err);
+      alert("Erro ao excluir professor.");
+    }
+  }
+
+  function handleShowForm() {
+    setShowForm(true);
+    setFormData({ nome: "", email: "", senha: "", confirmarSenha: "" });
+    setEditingProfessor(null);
+  }
+
+  // ---------------------- Atividades CRUD (frontend) ----------------------
+  useEffect(() => {
+    if (funcaoSelecionada === "Atividades") fetchAtividades();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [funcaoSelecionada]);
+
+  async function fetchAtividades() {
+    setLoadingAtividades(true);
+    try {
+      const res = await fetch("/api/atividades");
+      const text = await res.text().catch(() => "");
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+      if (res.ok) {
+        if (Array.isArray(data)) setAtividades(data);
+        else if (data && Array.isArray(data.atividades))
+          setAtividades(data.atividades);
+        else setAtividades([]);
+      } else {
+        setAtividades([]);
+      }
+    } catch (err) {
+      console.error("Erro fetching atividades:", err);
+      setAtividades([]);
+    } finally {
+      setLoadingAtividades(false);
+    }
+  }
+
+  function selecionarFuncao(funcao: string) {
+    setFuncaoSelecionada(funcao);
+    setShowForm(false);
+    setEditingProfessor(null);
+    setEditingAtividadeId(null);
+  }
+
+  function voltarMenu() {
+    setFuncaoSelecionada(null);
+    setShowForm(false);
+    setEditingProfessor(null);
+    setEditingAtividadeId(null);
+  }
+
+  function toggleUserPopup() {
+    setPopupAberto((p) => !p);
+  }
+
+  // Atividade form handlers
   function handleFormAtividadeChange(
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -242,50 +276,110 @@ export default function PainelAdm() {
     if (e.target.files) {
       const files = Array.from(e.target.files);
       setArquivos(files);
-      // create object URLs for preview
       const previews = files.map((f) => URL.createObjectURL(f));
-      // revoke previous previews
       setArquivosPreviews((prev) => {
-        prev.forEach((url) => URL.revokeObjectURL(url));
+        prev.forEach((u) => URL.revokeObjectURL(u));
         return previews;
       });
     }
   }
 
-  // cleanup previews on unmount
-  useEffect(() => {
-    return () => {
-      arquivosPreviews.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Alternativas handlers
   function addAlternativa() {
-    setAlternativas((prev) => [...prev, { texto: "" }]);
+    setAlternativas((p) => [...p, { texto: "" }]);
   }
   function removeAlternativa(index: number) {
-    setAlternativas((prev) => prev.filter((_, i) => i !== index));
+    setAlternativas((p) => p.filter((_, i) => i !== index));
     setCorrectIndex((prev) =>
       prev === index ? null : prev !== null && prev > index ? prev - 1 : prev
     );
   }
   function updateAlternativaText(index: number, texto: string) {
-    setAlternativas((prev) =>
-      prev.map((a, i) => (i === index ? { ...a, texto } : a))
+    setAlternativas((p) =>
+      p.map((a, i) => (i === index ? { ...a, texto } : a))
     );
   }
   function setCorrectAlternative(index: number) {
     setCorrectIndex(index);
   }
 
-  // Substitua a função existente por esta. Ela trata respostas não-JSON e loga o body para debug.
+  // Start editing an existing activity - populates form with data
+  function startEditAtividade(atividade: any) {
+    setEditingAtividadeId(atividade.idAtividade);
+    setFormAtividade({
+      titulo: atividade.titulo || "",
+      descricao: atividade.descricao || "",
+      tipo: atividade.tipo || "PLUGGED",
+      nota: atividade.nota ?? 10,
+      script: atividade.script ?? "",
+      linguagem: atividade.linguagem ?? "assemblyscript",
+    });
+    if (
+      Array.isArray(atividade.alternativas) &&
+      atividade.alternativas.length > 0
+    ) {
+      setAlternativas(
+        atividade.alternativas.map((a: any) => ({ texto: a.texto ?? "" }))
+      );
+      const idx = atividade.alternativas.findIndex((a: any) => !!a.correta);
+      setCorrectIndex(idx >= 0 ? idx : null);
+    } else {
+      setAlternativas([{ texto: "" }, { texto: "" }]);
+      setCorrectIndex(null);
+    }
+    // set previews for existing arquivos (URLs)
+    const previews = (atividade.arquivos || []).map((f: any) => f.url);
+    setArquivosPreviews(previews);
+    setArquivos([]); // new files not selected yet
+  }
+
+  // Delete activity
+  async function handleDeleteAtividade(id: number) {
+    if (!confirm("Deseja realmente excluir esta atividade?")) return;
+    try {
+      const res = await fetch(`/api/atividades/${id}`, { method: "DELETE" });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        console.error("Erro ao deletar atividade:", res.status, text);
+        alert("Erro ao deletar atividade. Veja console.");
+        return;
+      }
+      alert("Atividade removida");
+      fetchAtividades();
+    } catch (err) {
+      console.error("Erro ao deletar atividade:", err);
+      alert("Erro ao deletar atividade. Veja console.");
+    }
+  }
+
+  // Delete file associated to activity
+  async function handleDeleteArquivo(idArquivo: number) {
+    if (!confirm("Remover este arquivo?")) return;
+    try {
+      const res = await fetch(`/api/atividades/arquivo/${idArquivo}`, {
+        method: "DELETE",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        console.error("Erro ao deletar arquivo:", res.status, text);
+        alert("Erro ao deletar arquivo. Veja console.");
+        return;
+      }
+      alert("Arquivo removido");
+      fetchAtividades();
+    } catch (err) {
+      console.error("Erro ao deletar arquivo:", err);
+      alert("Erro ao deletar arquivo. Veja console.");
+    }
+  }
+
+  // Submit handler: Create or Update activity
   async function handleFormAtividadeSubmit(
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
 
-    // Validações PLUGGED
+    // validations for PLUGGED
     if (formAtividade.tipo === "PLUGGED") {
       const filled = alternativas.map((a) => a.texto?.trim()).filter(Boolean);
       if (filled.length === 0) {
@@ -298,84 +392,115 @@ export default function PainelAdm() {
       }
     }
 
+    // payload for JSON operations
     const payload: any = {
       titulo: formAtividade.titulo,
       descricao: formAtividade.descricao,
       tipo: formAtividade.tipo,
-      linguagem: formAtividade.linguagem ?? null,
-      script:
-        formAtividade.tipo === "PLUGGED" ? formAtividade.script : undefined,
+      nota: formAtividade.nota,
+      script: formAtividade.script || null,
+      linguagem: formAtividade.linguagem || null,
     };
 
-    // alternativas: enviar só texto
     if (formAtividade.tipo === "PLUGGED") {
       payload.alternativas = alternativas
-        .map((a: any) => ({ texto: a.texto ?? "" }))
-        .filter((a: any) => a.texto.trim() !== "");
-      payload.correctIndex = correctIndex; // opcional
+        .map((a, i) => ({ texto: a.texto || "", correta: i === correctIndex }))
+        .filter((a) => a.texto.trim() !== "");
     }
 
     try {
-      const res = await fetch("/api/atividade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      if (editingAtividadeId) {
+        // Update existing activity (PUT JSON)
+        const res = await fetch(`/api/atividades/${editingAtividadeId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            alternativas: payload.alternativas,
+          }),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+          console.error("Erro ao atualizar atividade:", res.status, text);
+          alert("Erro ao atualizar atividade. Veja console.");
+          return;
+        }
 
-      if (!res.ok) {
-        // tenta ler body como texto para debug
-        const text = await res.text().catch(() => "<no-body>");
-        console.error("POST /api/atividade failed", res.status, text);
-        let json = null;
-        try {
-          json = JSON.parse(text);
-        } catch {}
-        alert(
-          json?.error ||
-            `Erro interno ao criar atividade (status ${res.status})`
-        );
-        return;
-      }
-
-      const data = await res.json();
-      // sucesso: continue fluxo
-
-      const idAtividade = data?.idAtividade ?? data?.id ?? null;
-
-      // upload se UNPLUGGED
-      if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
-        if (!idAtividade) {
-          console.warn(
-            "Atividade criada mas id não retornado; cancelando upload."
-          );
-        } else {
-          const formDataUpload = new FormData();
-          arquivos.forEach((file) => formDataUpload.append("arquivos", file));
-          formDataUpload.append("atividadeId", String(idAtividade));
-
-          const upRes = await fetch("/api/upload-arquivos-atividade", {
+        // If user selected new files, upload them and replace existing files on server
+        if (arquivos.length > 0) {
+          const fd = new FormData();
+          fd.append("atividadeId", String(editingAtividadeId));
+          fd.append("replace", replaceFilesOnUpdate ? "true" : "false");
+          arquivos.forEach((f) => fd.append("arquivos", f));
+          const upRes = await fetch("/api/atividades/upload-files", {
             method: "POST",
-            body: formDataUpload,
+            body: fd,
           });
-          let upJson: any = null;
-          try {
-            upJson = await upRes.json();
-          } catch {
-            const t = await upRes.text().catch(() => "");
-            console.error("Upload retornou não-JSON:", upRes.status, t);
-            alert(`Erro no upload (status ${upRes.status}). Veja console.`);
+          const upText = await upRes.text().catch(() => "");
+          if (!upRes.ok) {
+            console.error(
+              "Erro no upload ao atualizar atividade:",
+              upRes.status,
+              upText
+            );
+            alert(
+              "Atividade atualizada, mas falha no upload dos novos arquivos. Veja console."
+            );
+            // continue; activity was already updated
+          } else {
+            console.log("Arquivos enviados/atualizados com sucesso.");
+          }
+        }
+
+        alert("Atividade atualizada!");
+      } else {
+        // Create new activity
+        if (formAtividade.tipo === "UNPLUGGED" && arquivos.length > 0) {
+          // Use multipart endpoint that creates atividade + arquivos
+          const fd = new FormData();
+          fd.append("titulo", String(payload.titulo));
+          fd.append("descricao", String(payload.descricao ?? ""));
+          fd.append("tipo", String(payload.tipo));
+          fd.append("nota", String(payload.nota ?? ""));
+          if (payload.script) fd.append("script", String(payload.script));
+          if (payload.linguagem)
+            fd.append("linguagem", String(payload.linguagem));
+          if (payload.alternativas)
+            fd.append("alternativas", JSON.stringify(payload.alternativas));
+          arquivos.forEach((f) => fd.append("arquivos", f));
+          const res = await fetch("/api/atividades/atividade-com-upload", {
+            method: "POST",
+            body: fd,
+          });
+          const text = await res.text().catch(() => "");
+          if (!res.ok) {
+            console.error(
+              "Erro criando atividade com upload:",
+              res.status,
+              text
+            );
+            alert("Erro ao criar atividade (upload). Veja console.");
             return;
           }
-          if (!upRes.ok) {
-            console.error("Erro no upload:", upRes.status, upJson);
-            alert(upJson?.error || `Erro no upload (status ${upRes.status})`);
+        } else {
+          // PLUGGED or UNPLUGGED without files -> JSON endpoint
+          const res = await fetch("/api/atividades", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const text = await res.text().catch(() => "");
+          if (!res.ok) {
+            console.error("Erro criando atividade:", res.status, text);
+            alert("Erro ao criar atividade. Veja console.");
             return;
           }
         }
+        alert("Atividade criada!");
       }
 
-      alert("Atividade criada com sucesso!");
-      // reset do form (simplificado)
+      // reset form
+      setEditingAtividadeId(null);
       setFormAtividade({
         titulo: "",
         descricao: "",
@@ -395,11 +520,12 @@ export default function PainelAdm() {
       setCorrectIndex(null);
       fetchAtividades();
     } catch (err) {
-      console.error("Erro inesperado ao criar atividade:", err);
-      alert("Erro inesperado ao criar atividade. Veja o console.");
+      console.error("Erro no submit atividade:", err);
+      alert("Erro inesperado. Veja console.");
     }
   }
 
+  // ---------------------- JSX ----------------------
   return (
     <div className={styles.paginaAlunoBody}>
       {/* Sidebar */}
@@ -432,7 +558,6 @@ export default function PainelAdm() {
 
       {/* Main */}
       <main className={styles.paginaAlunoMain}>
-        {/* Header */}
         <div className={styles.header}>
           <h1>
             ADM: <span className={styles.headerTitleSpan}>Funções do ADM</span>
@@ -476,14 +601,14 @@ export default function PainelAdm() {
           </div>
         </div>
 
-        {/* Conteúdo Dinâmico */}
+        {/* Conteúdo */}
         {!funcaoSelecionada && (
           <div style={{ margin: "auto", color: "#fff", fontSize: "1.3rem" }}>
             <h2>Selecione uma Função</h2>
           </div>
         )}
 
-        {/* Listagem de Professores */}
+        {/* Professores list / form */}
         {funcaoSelecionada === "Professores" &&
           !showForm &&
           !editingProfessor && (
@@ -496,7 +621,7 @@ export default function PainelAdm() {
                   {professores.length === 0 && (
                     <p>Nenhum professor cadastrado.</p>
                   )}
-                  {professores.map((prof: any) => (
+                  {professores.map((prof) => (
                     <div
                       key={prof.idProfessor}
                       style={{
@@ -518,7 +643,14 @@ export default function PainelAdm() {
                             color: "#fff",
                             borderColor: "#00bcd4",
                           }}
-                          onClick={() => handleEditar(prof)}
+                          onClick={() => {
+                            setEditingProfessor(prof);
+                            setEditFormData({
+                              nome: prof.nome,
+                              senha: "",
+                              confirmarSenha: "",
+                            });
+                          }}
                         >
                           Editar
                         </button>
@@ -529,7 +661,9 @@ export default function PainelAdm() {
                             color: "#fff",
                             borderColor: "#b71c1c",
                           }}
-                          onClick={() => handleExcluir(prof.idProfessor)}
+                          onClick={() =>
+                            handleExcluirProfessor(prof.idProfessor)
+                          }
                         >
                           Excluir
                         </button>
@@ -553,7 +687,7 @@ export default function PainelAdm() {
             </div>
           )}
 
-        {/* Formulário de Criação */}
+        {/* Criar Professor */}
         {funcaoSelecionada === "Professores" && showForm && (
           <div className={styles.card}>
             <h2>Criar Professor</h2>
@@ -567,7 +701,9 @@ export default function PainelAdm() {
                 placeholder="Nome"
                 required
                 value={formData.nome}
-                onChange={handleChange}
+                onChange={(e) =>
+                  setFormData({ ...formData, [e.target.name]: e.target.value })
+                }
                 className={styles.input}
               />
               <input
@@ -576,7 +712,9 @@ export default function PainelAdm() {
                 placeholder="Email"
                 required
                 value={formData.email}
-                onChange={handleChange}
+                onChange={(e) =>
+                  setFormData({ ...formData, [e.target.name]: e.target.value })
+                }
                 className={styles.input}
               />
               <input
@@ -585,7 +723,9 @@ export default function PainelAdm() {
                 placeholder="Senha"
                 required
                 value={formData.senha}
-                onChange={handleChange}
+                onChange={(e) =>
+                  setFormData({ ...formData, [e.target.name]: e.target.value })
+                }
                 className={styles.input}
               />
               <input
@@ -594,7 +734,9 @@ export default function PainelAdm() {
                 placeholder="Confirmar Senha"
                 required
                 value={formData.confirmarSenha}
-                onChange={handleChange}
+                onChange={(e) =>
+                  setFormData({ ...formData, [e.target.name]: e.target.value })
+                }
                 className={styles.input}
               />
               <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
@@ -617,7 +759,7 @@ export default function PainelAdm() {
           </div>
         )}
 
-        {/* Formulário de Edição */}
+        {/* Editar Professor */}
         {funcaoSelecionada === "Professores" && editingProfessor && (
           <div className={styles.card}>
             <h2>Editar Professor</h2>
@@ -631,7 +773,12 @@ export default function PainelAdm() {
                 placeholder="Nome"
                 required
                 value={editFormData.nome}
-                onChange={handleEditChange}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    [e.target.name]: e.target.value,
+                  })
+                }
                 className={styles.input}
               />
               <input
@@ -649,7 +796,12 @@ export default function PainelAdm() {
                 placeholder="Nova Senha"
                 required
                 value={editFormData.senha}
-                onChange={handleEditChange}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    [e.target.name]: e.target.value,
+                  })
+                }
                 className={styles.input}
               />
               <input
@@ -658,7 +810,12 @@ export default function PainelAdm() {
                 placeholder="Confirmar Nova Senha"
                 required
                 value={editFormData.confirmarSenha}
-                onChange={handleEditChange}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    [e.target.name]: e.target.value,
+                  })
+                }
                 className={styles.input}
               />
               <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
@@ -681,10 +838,13 @@ export default function PainelAdm() {
           </div>
         )}
 
-        {/* Painel de Atividades CRUD */}
+        {/* Atividades CRUD */}
         {funcaoSelecionada === "Atividades" && (
           <div className={styles.card}>
-            <h2>Criar Nova Atividade</h2>
+            <h2>
+              {editingAtividadeId ? "Editar Atividade" : "Criar Nova Atividade"}
+            </h2>
+
             <form
               onSubmit={handleFormAtividadeSubmit}
               style={{ display: "flex", flexDirection: "column", gap: 12 }}
@@ -794,7 +954,6 @@ export default function PainelAdm() {
                     </div>
                   </div>
 
-                  {/* Re-adicionei campos opcionais para PLUGGED: script + linguagem */}
                   <textarea
                     name="script"
                     placeholder="Script da atividade (código) — opcional"
@@ -834,17 +993,77 @@ export default function PainelAdm() {
                       ))}
                     </ul>
                   )}
+                  {/* show previews of existing files when editing */}
+                  {arquivosPreviews.length > 0 && (
+                    <div>
+                      <strong>Previews / arquivos existentes:</strong>
+                      <ul>
+                        {arquivosPreviews.map((p, i) => (
+                          <li key={i}>
+                            <a href={p} target="_blank" rel="noreferrer">
+                              {p}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* replace-files checkbox only visible when editing */}
+                  {editingAtividadeId && (
+                    <div style={{ marginTop: 8 }}>
+                      <label style={{ color: "#fff" }}>
+                        <input
+                          type="checkbox"
+                          checked={replaceFilesOnUpdate}
+                          onChange={(e) =>
+                            setReplaceFilesOnUpdate(e.target.checked)
+                          }
+                        />{" "}
+                        Substituir arquivos existentes ao salvar
+                      </label>
+                    </div>
+                  )}
                 </>
               )}
 
-              <button
-                type="submit"
-                style={{ background: "#4caf50", color: "#fff" }}
-                className={styles.btn}
-              >
-                Criar Atividade
-              </button>
+              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                <button
+                  type="submit"
+                  style={{ background: "#4caf50", color: "#fff" }}
+                  className={styles.btn}
+                >
+                  {editingAtividadeId ? "Salvar Alterações" : "Criar Atividade"}
+                </button>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={() => {
+                    // cancel edit/create reset
+                    setEditingAtividadeId(null);
+                    setFormAtividade({
+                      titulo: "",
+                      descricao: "",
+                      tipo: "PLUGGED",
+                      nota: 10,
+                      script: "",
+                      linguagem: "assemblyscript",
+                    });
+                    setArquivos([]);
+                    arquivosPreviews.forEach((u) => {
+                      try {
+                        URL.revokeObjectURL(u);
+                      } catch {}
+                    });
+                    setArquivosPreviews([]);
+                    setAlternativas([{ texto: "" }, { texto: "" }]);
+                    setCorrectIndex(null);
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
             </form>
+
             <hr />
             <h2>Atividades Criadas</h2>
             {loadingAtividades ? (
@@ -855,10 +1074,54 @@ export default function PainelAdm() {
                   <li>Nenhuma atividade cadastrada.</li>
                 )}
                 {atividades.map((a: any) => (
-                  <li key={a.idAtividade}>
+                  <li key={a.idAtividade} style={{ marginBottom: 12 }}>
                     <strong>{a.titulo}</strong> ({a.tipo}) - Nota: {a.nota}
                     <br />
                     {a.descricao}
+                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                      <button
+                        className={styles.btn}
+                        onClick={() => startEditAtividade(a)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className={styles.btn}
+                        onClick={() => handleDeleteAtividade(a.idAtividade)}
+                        style={{ background: "#b71c1c", color: "#fff" }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                    {/* arquivos list + delete */}
+                    {Array.isArray(a.arquivos) && a.arquivos.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <strong>Arquivos:</strong>
+                        <ul>
+                          {a.arquivos.map((f: any) => (
+                            <li
+                              key={f.idArquivo}
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                alignItems: "center",
+                              }}
+                            >
+                              <a href={f.url} target="_blank" rel="noreferrer">
+                                {f.url}
+                              </a>
+                              <button
+                                className={styles.btn}
+                                style={{ background: "#ff8a65" }}
+                                onClick={() => handleDeleteArquivo(f.idArquivo)}
+                              >
+                                Remover
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

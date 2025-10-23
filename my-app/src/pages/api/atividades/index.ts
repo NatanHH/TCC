@@ -5,87 +5,52 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  console.log("API /api/atividade", req.method);
-
-  if (req.method === "GET") {
-    try {
+  try {
+    if (req.method === "GET") {
       const atividades = await prisma.atividade.findMany({
-        include: { alternativas: true },
+        include: {
+          alternativas: true,
+          arquivos: true,
+        },
+        orderBy: { idAtividade: "desc" },
       });
-      return res.status(200).json({ atividades });
-    } catch (err: any) {
-      console.error("GET /api/atividade error:", err);
-      return res.status(500).json({ error: "Erro interno" });
+      return res.status(200).json(atividades);
     }
-  }
 
-  if (req.method === "POST") {
-    try {
-      console.log("POST /api/atividade payload:", req.body);
+    if (req.method === "POST") {
+      const { titulo, descricao, tipo, nota, script, linguagem, alternativas } =
+        req.body;
+      if (!titulo || !tipo)
+        return res
+          .status(400)
+          .json({ error: "titulo e tipo são obrigatórios" });
 
-      const {
-        alternativas = [],
-        correctIndex,
+      const data: any = {
         titulo,
-        descricao,
+        descricao: descricao || null,
         tipo,
-        linguagem,
-        script,
-      } = req.body ?? {};
-
-      // montar payload apenas com campos permitidos
-      const createData: any = {
-        titulo: titulo ?? "",
-        descricao: descricao ?? null,
-        tipo: tipo ?? null,
+        script: script ?? null,
         linguagem: linguagem ?? null,
       };
+      if (nota !== undefined && nota !== null) data.nota = Number(nota);
 
-      // nested create de alternativas apenas com texto
       if (Array.isArray(alternativas) && alternativas.length > 0) {
-        createData.alternativas = {
-          create: alternativas
-            .map((a: any) => ({ texto: String(a.texto ?? "") }))
-            .filter((a: any) => a.texto.trim() !== ""),
+        data.alternativas = {
+          create: alternativas.map((a: any, i: number) => ({
+            texto: a.texto ?? String(a),
+            correta: !!a.correta,
+          })),
         };
       }
 
-      // opcional: script (se voce armazena)
-      if (typeof script === "string" && script.trim() !== "") {
-        createData.script = script;
-      }
-
-      const atividade = await prisma.atividade.create({
-        data: createData,
-        include: { alternativas: true },
-      });
-
-      // marca alternativa correta se veio correctIndex (e se campo correta existir)
-      if (
-        typeof correctIndex === "number" &&
-        atividade.alternativas?.[correctIndex]
-      ) {
-        const altId = atividade.alternativas[correctIndex].idAlternativa;
-        try {
-          await prisma.alternativa.update({
-            where: { idAlternativa: altId },
-            data: { correta: true } as any,
-          });
-        } catch (e) {
-          // ignora se o campo 'correta' não estiver no schema
-          console.warn(
-            "Não foi possível marcar 'correta' (campo pode não existir):",
-            String(e)
-          );
-        }
-      }
-
-      return res.status(201).json({ success: true, atividade });
-    } catch (err: any) {
-      console.error("POST /api/atividade error:", err);
-      return res.status(500).json({ error: err?.message || "Erro interno" });
+      const created = await prisma.atividade.create({ data });
+      return res.status(201).json(created);
     }
-  }
 
-  return res.status(405).json({ error: "Método não permitido" });
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ error: "Método não permitido" });
+  } catch (err: any) {
+    console.error("atividades/index error:", err);
+    return res.status(500).json({ error: err?.message || "Erro interno" });
+  }
 }

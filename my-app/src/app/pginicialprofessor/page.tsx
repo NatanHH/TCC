@@ -93,33 +93,84 @@ export default function PageProfessor() {
 
   async function fetchTurmas() {
     setLoadingTurmas(true);
-    const res = await fetch(`/api/turmasprofessor?professorId=${professorId}`);
-    const data = await res.json();
-    if (res.ok) setTurmas(data);
-    else setTurmas([]);
-    setLoadingTurmas(false);
+    try {
+      // API de turmas está em src/pages/api/turma.ts -> rota /api/turma
+      const res = await fetch(`/api/turma?professorId=${professorId}`);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (res.ok) {
+        // aceita array direto ou { turmas: [...] }
+        if (Array.isArray(data)) setTurmas(data);
+        else if (data && Array.isArray(data.turmas)) setTurmas(data.turmas);
+        else setTurmas([]);
+      } else {
+        setTurmas([]);
+      }
+    } catch (err) {
+      console.error("Erro fetching turmas:", err);
+      setTurmas([]);
+    } finally {
+      setLoadingTurmas(false);
+    }
   }
 
   async function fetchAtividades() {
     setLoadingAtividades(true);
-    const res = await fetch(`/api/atividadesprofessor`);
-    const data = await res.json();
-    if (res.ok) {
-      if (Array.isArray(data)) setAtividades(data);
-      else if (data && Array.isArray(data.atividades))
-        setAtividades(data.atividades);
-      else setAtividades([]);
-    } else setAtividades([]);
-    setLoadingAtividades(false);
+    try {
+      // API de atividades para professor está em:
+      // src/pages/api/professores/atividadesprofessor.ts -> rota /api/professores/atividadesprofessor
+      const res = await fetch(`/api/professores/atividadesprofessor`);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (res.ok) {
+        if (Array.isArray(data)) setAtividades(data);
+        else if (data && Array.isArray(data.atividades))
+          setAtividades(data.atividades);
+        else setAtividades([]);
+      } else {
+        setAtividades([]);
+      }
+    } catch (err) {
+      console.error("Erro fetching atividades:", err);
+      setAtividades([]);
+    } finally {
+      setLoadingAtividades(false);
+    }
   }
 
   async function fetchAtividadesTurma(idTurma: number) {
     setLoadingAtividades(true);
-    const res = await fetch(`/api/atividadesturma?turmaId=${idTurma}`);
-    const data = await res.json();
-    if (res.ok) setAtividadesTurma(data);
-    else setAtividadesTurma([]);
-    setLoadingAtividades(false);
+    try {
+      // rota esperada: src/pages/api/atividadesturma.ts -> /api/atividadesturma?turmaId=...
+      const res = await fetch(`/api/atividadesturma?turmaId=${idTurma}`);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (res.ok) {
+        if (Array.isArray(data)) setAtividadesTurma(data);
+        else if (data && Array.isArray(data.atividades))
+          setAtividadesTurma(data.atividades);
+        else setAtividadesTurma([]);
+      } else {
+        setAtividadesTurma([]);
+      }
+    } catch (err) {
+      console.error("Erro fetching atividades da turma:", err);
+      setAtividadesTurma([]);
+    } finally {
+      setLoadingAtividades(false);
+    }
   }
 
   function selecionarTurmaById(idTurma: number) {
