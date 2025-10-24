@@ -74,6 +74,10 @@ export default function PageProfessor() {
     useState<Turma | null>(null);
   const [confirmApplyModalOpen, setConfirmApplyModalOpen] = useState(false);
 
+  // ADICIONAR estes novos estados:
+  const [turmasSelecionadas, setTurmasSelecionadas] = useState<number[]>([]);
+  const [isApplying, setIsApplying] = useState(false); // indica se está aplicando (loading)
+
   // Busca professorId do localStorage, e turmas do professor
   useEffect(() => {
     const id = localStorage.getItem("idProfessor");
@@ -84,10 +88,40 @@ export default function PageProfessor() {
     if (email) setProfessorEmail(email);
   }, []);
 
+  async function fetchTurmas() {
+    if (!professorId) return;
+
+    setLoadingTurmas(true);
+    try {
+      const res = await fetch(`/api/turma?professorId=${professorId}`);
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      // A API retorna array de turmas diretamente
+      if (Array.isArray(data)) {
+        setTurmas(data);
+      } else {
+        console.error("Resposta não é um array:", data);
+        setTurmas([]);
+      }
+    } catch (err) {
+      console.error("Erro ao buscar turmas:", err);
+      setTurmas([]);
+    } finally {
+      setLoadingTurmas(false);
+    }
+  }
+
+  // Chama fetchTurmas quando professorId estiver disponível
   useEffect(() => {
     if (professorId) {
       fetchTurmas();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [professorId]);
 
   useEffect(() => {
@@ -96,40 +130,12 @@ export default function PageProfessor() {
     } else {
       fetchAtividadesTurma(turmaSelecionada.idTurma);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turmaSelecionada, professorId]);
-
-  async function fetchTurmas() {
-    setLoadingTurmas(true);
-    try {
-      // API de turmas está em src/pages/api/turma.ts -> rota /api/turma
-      const res = await fetch(`/api/turma?professorId=${professorId}`);
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        data = null;
-      }
-      if (res.ok) {
-        // aceita array direto ou { turmas: [...] }
-        if (Array.isArray(data)) setTurmas(data);
-        else if (data && Array.isArray(data.turmas)) setTurmas(data.turmas);
-        else setTurmas([]);
-      } else {
-        setTurmas([]);
-      }
-    } catch (err) {
-      console.error("Erro fetching turmas:", err);
-      setTurmas([]);
-    } finally {
-      setLoadingTurmas(false);
-    }
-  }
 
   async function fetchAtividades() {
     setLoadingAtividades(true);
     try {
-      // API de atividades para professor está em:
-      // src/pages/api/professores/atividadesprofessor.ts -> rota /api/professores/atividadesprofessor
       const res = await fetch(`/api/professores/atividadesprofessor`);
       let data: any = null;
       try {
@@ -156,7 +162,6 @@ export default function PageProfessor() {
   async function fetchAtividadesTurma(idTurma: number) {
     setLoadingAtividades(true);
     try {
-      // rota esperada: src/pages/api/atividadesturma.ts -> /api/atividadesturma?turmaId=...
       const res = await fetch(`/api/atividadesturma?turmaId=${idTurma}`);
       let data: any = null;
       try {
@@ -187,8 +192,6 @@ export default function PageProfessor() {
   }
 
   function mostrarDetalheAtividade(atividade: Atividade) {
-    // abre o painel central de detalhe (como no frame 5 do Figma),
-    // neste painel haverá APENAS o botão Aplicar em turma + Voltar + ABRIR (quando UNPLUGGED com arquivos)
     setAtividadeDetalhe(atividade);
   }
 
@@ -284,67 +287,113 @@ export default function PageProfessor() {
   }
 
   // Modal Aplicar Atividade (abre seleção de turma)
-  function abrirModalAplicar(atividade: Atividade) {
+  async function abrirModalAplicar(atividade: Atividade) {
+    // fetch turmas to ensure we display up-to-date list (and show loading)
+    if (professorId) {
+      // very small debug helper to see the flow
+      console.log(
+        "abrirModalAplicar: professorId",
+        professorId,
+        "atividade",
+        atividade?.idAtividade
+      );
+      await fetchTurmas();
+    }
     setAtividadeParaAplicar(atividade);
-    setModalAplicarAberto(true);
-    // reset selected turma/confirm states
-    setTurmaSelecionadaParaAplicacao(null);
+    setTurmasSelecionadas([]); // limpar seleções
     setConfirmApplyModalOpen(false);
+    setModalAplicarAberto(true);
   }
   function fecharModalAplicar() {
     setModalAplicarAberto(false);
     setAtividadeParaAplicar(null);
+    setTurmasSelecionadas([]);
     setTurmaSelecionadaParaAplicacao(null);
     setConfirmApplyModalOpen(false);
   }
 
-  // Ao selecionar uma turma no modal de aplicar, vou abrir o modal de confirmação
-  function selecionarTurmaParaAplicar(turma: Turma) {
-    setTurmaSelecionadaParaAplicacao(turma);
-    // fecha o modal de seleção e abre o modal de confirmação
-    setModalAplicarAberto(false);
-    setConfirmApplyModalOpen(true);
+  // NOVA função para toggle de seleção múltipla
+  function toggleTurmaSelection(turmaId: number) {
+    setTurmasSelecionadas((prev) =>
+      prev.includes(turmaId)
+        ? prev.filter((id) => id !== turmaId)
+        : [...prev, turmaId]
+    );
   }
 
-  async function confirmarEAplicar() {
-    if (!atividadeParaAplicar || !turmaSelecionadaParaAplicacao) return;
-    await aplicarAtividadeEmTurma(turmaSelecionadaParaAplicacao.idTurma);
-    setConfirmApplyModalOpen(false);
-    setTurmaSelecionadaParaAplicacao(null);
-    setAtividadeParaAplicar(null);
-  }
-
-  async function aplicarAtividadeEmTurma(idTurma: number) {
+  // NOVA função para aplicar em múltiplas turmas com debug + loading state
+  async function aplicarEmMultiplasTurmas() {
     if (!atividadeParaAplicar) return;
+
+    if (turmasSelecionadas.length === 0) {
+      alert("Selecione pelo menos uma turma para aplicar a atividade!");
+      return;
+    }
+
+    setIsApplying(true);
     try {
-      const res = await fetch("/api/aplicaratividade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idAtividade: atividadeParaAplicar.idAtividade,
-          idTurma,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        alert(
-          `Atividade "${atividadeParaAplicar.titulo}" aplicada com sucesso na turma!`
-        );
-        if (turmaSelecionada && turmaSelecionada.idTurma === idTurma) {
-          fetchAtividadesTurma(idTurma);
+      const promessas = turmasSelecionadas.map(async (idTurma) => {
+        try {
+          const res = await fetch("/api/aplicaratividade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              idAtividade: atividadeParaAplicar.idAtividade,
+              idTurma,
+            }),
+          });
+
+          let data: any = null;
+          try {
+            data = await res.json();
+          } catch {
+            data = { raw: await res.text().catch(() => "") };
+          }
+
+          return { idTurma, ok: res.ok, status: res.status, data };
+        } catch (err) {
+          return { idTurma, ok: false, err };
         }
-        fetchTurmas();
-      } else {
-        alert(data.error || "Erro ao aplicar atividade.");
+      });
+
+      const resultados = await Promise.all(promessas);
+
+      const sucessos = resultados.filter((r) => r.ok);
+      const falhas = resultados.filter((r) => !r.ok);
+
+      if (sucessos.length > 0) {
+        alert(
+          `Atividade "${atividadeParaAplicar.titulo}" aplicada em ${sucessos.length} turma(s).`
+        );
       }
-    } catch (err) {
-      console.error(err);
-      alert("Erro de rede ao aplicar atividade.");
-    } finally {
+      if (falhas.length > 0) {
+        const msgs = falhas
+          .map((f) => {
+            const turma = turmas.find((t) => t.idTurma === f.idTurma);
+            const nome = turma?.nome ?? `Turma ${f.idTurma}`;
+            const errMsg =
+              f.data?.error || (f.err && String(f.err)) || `status ${f.status}`;
+            return `${nome}: ${errMsg}`;
+          })
+          .join("\n");
+        alert(`Falhas em ${falhas.length} turma(s):\n${msgs}`);
+      }
+
+      // limpar e fechar
+      setTurmasSelecionadas([]);
       setModalAplicarAberto(false);
-      setConfirmApplyModalOpen(false);
       setAtividadeParaAplicar(null);
-      setTurmaSelecionadaParaAplicacao(null);
+
+      // atualizar dados
+      if (
+        turmaSelecionada &&
+        turmasSelecionadas.includes(turmaSelecionada.idTurma)
+      ) {
+        fetchAtividadesTurma(turmaSelecionada.idTurma);
+      }
+      fetchTurmas();
+    } finally {
+      setIsApplying(false);
     }
   }
 
@@ -358,7 +407,7 @@ export default function PageProfessor() {
         alert("Nenhum arquivo anexado para esta atividade.");
         return;
       }
-      // abre o primeiro arquivo; se quiser abrir todos, iterar e abrir cada um
+      // abre o primeiro arquivo
       const url = arquivos[0].url;
       const finalUrl = url.startsWith("http")
         ? url
@@ -367,6 +416,46 @@ export default function PageProfessor() {
     } catch (err) {
       console.error("Erro ao abrir arquivo da atividade:", err);
       alert("Não foi possível abrir o arquivo. Veja o console.");
+    }
+  }
+
+  // Função para excluir turma
+  async function excluirTurma(turmaId: number, nomeTurma: string) {
+    const confirmacao = window.confirm(
+      `Você tem certeza que deseja excluir a turma "${nomeTurma}"?\n\n` +
+        `Esta ação irá:\n` +
+        `• Remover todos os alunos desta turma\n` +
+        `• Remover todas as atividades aplicadas\n` +
+        `• Excluir permanentemente a turma\n\n` +
+        `Esta ação NÃO pode ser desfeita!`
+    );
+
+    if (!confirmacao) return;
+
+    try {
+      const res = await fetch("/api/turma", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turmaId }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert(`Turma "${nomeTurma}" foi excluída com sucesso!`);
+
+        if (turmaSelecionada?.idTurma === turmaId) {
+          setTurmaSelecionada(null);
+          setAtividadesTurma([]);
+        }
+
+        fetchTurmas();
+      } else {
+        alert(` Erro ao excluir turma: ${data.error}`);
+      }
+    } catch (err) {
+      console.error("Erro ao excluir turma:", err);
+      alert(" Erro de conexão ao excluir turma");
     }
   }
 
@@ -380,6 +469,7 @@ export default function PageProfessor() {
             alt="Logo Codemind"
           />
         </div>
+
         <h2>Minhas Turmas</h2>
         {loadingTurmas ? (
           <p style={{ color: "#fff" }}>Carregando turmas...</p>
@@ -396,10 +486,26 @@ export default function PageProfessor() {
               }`}
               onClick={() => selecionarTurmaById(turma.idTurma)}
             >
-              {turma.nome}
+              <div className={styles.turmaContent}>
+                <span className={styles.turmaInfo}>
+                  {turma.nome}({turma.alunos?.length || 0} alunos)
+                </span>
+
+                <span
+                  className={styles.deleteIcon}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    excluirTurma(turma.idTurma, turma.nome);
+                  }}
+                  title={`Excluir turma "${turma.nome}"`}
+                >
+                  🗑️
+                </span>
+              </div>
             </button>
           ))
         )}
+
         <button className={styles.criarBtn} onClick={abrirModalTurma}>
           Criar Turma
         </button>
@@ -534,7 +640,6 @@ export default function PageProfessor() {
               </div>
             </div>
           ) : (
-            // Lista principal - todas as atividades criadas pelo admin (SEM botões na lista)
             <>
               <h2 style={{ color: "#fff", margin: "20px 0" }}>
                 Atividades disponíveis para aplicar
@@ -575,8 +680,7 @@ export default function PageProfessor() {
                         </span>
                       </div>
 
-                      {/* Removed quick action buttons from the list cards as requested.
-                          The only action on the card now is clicking the card to open the detail view. */}
+                      {/* Quick action removed - only detail "Aplicar Atividade" remains */}
                     </li>
                   ))}
                 </ul>
@@ -586,92 +690,124 @@ export default function PageProfessor() {
         </div>
 
         {/* Modal para aplicar atividade em turma (seleção de turma) */}
-        {modalAplicarAberto && atividadeParaAplicar && (
-          <div className={styles.modal}>
+        <div
+          className={`${styles.modal} ${
+            modalAplicarAberto ? styles.modalActive : ""
+          }`}
+          role="dialog"
+          aria-modal="true"
+          aria-hidden={!modalAplicarAberto}
+          style={{ display: modalAplicarAberto ? undefined : "none" }}
+        >
+          {modalAplicarAberto && atividadeParaAplicar && (
             <div className={styles.modalContent}>
-              <h2>Aplicar "{atividadeParaAplicar.titulo}" em qual turma?</h2>
-              {turmas.length === 0 && <p>Nenhuma turma disponível.</p>}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  marginTop: 12,
-                }}
-              >
-                {turmas.map((turma) => (
-                  <button
-                    key={turma.idTurma}
-                    onClick={() => selecionarTurmaParaAplicar(turma)}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      background: "#3a3360",
-                      color: "#fff",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      textAlign: "left",
-                    }}
-                  >
-                    {turma.nome}
-                  </button>
-                ))}
-                <button onClick={fecharModalAplicar} style={{ marginTop: 12 }}>
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+              <h2>Aplicar "{atividadeParaAplicar.titulo}" em quais turmas?</h2>
 
-        {/* Modal de confirmação - aparece após o usuário selecionar a turma */}
-        {confirmApplyModalOpen &&
-          atividadeParaAplicar &&
-          turmaSelecionadaParaAplicacao && (
-            <div className={styles.modal}>
-              <div className={styles.modalContent}>
-                <h3>Confirmar aplicação</h3>
-                <p>
-                  Deseja realmente aplicar a atividade{" "}
-                  <strong>"{atividadeParaAplicar.titulo}"</strong> na turma{" "}
-                  <strong>{turmaSelecionadaParaAplicacao.nome}</strong>?
-                </p>
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button
-                    onClick={confirmarEAplicar}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 8,
-                      background: "#00bcd4",
-                      color: "#fff",
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Sim, aplicar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setConfirmApplyModalOpen(false);
-                      setTurmaSelecionadaParaAplicacao(null);
-                      // mantemos a atividade para caso o professor queira reabrir seleção
-                      setAtividadeParaAplicar(null);
-                    }}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 8,
-                      background: "#b71c1c",
-                      color: "#fff",
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancelar
-                  </button>
+              {loadingTurmas ? (
+                <p>Carregando turmas...</p>
+              ) : turmas.length === 0 ? (
+                <p>Nenhuma turma disponível.</p>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    marginTop: 12,
+                  }}
+                >
+                  {turmas.map((turma) => {
+                    const selected = turmasSelecionadas.includes(turma.idTurma);
+                    return (
+                      <label
+                        key={turma.idTurma}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "10px 12px",
+                          borderRadius: 8,
+                          background: selected
+                            ? "rgba(0, 188, 212, 0.08)"
+                            : "#3a3360",
+                          color: "#fff",
+                          border: `1px solid ${
+                            selected ? "#00bcd4" : "rgba(255,255,255,0.06)"
+                          }`,
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <input
+                          name={`turma_${turma.idTurma}`}
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleTurmaSelection(turma.idTurma);
+                          }}
+                          style={{
+                            marginRight: 8,
+                            cursor: "pointer",
+                            accentColor: "#00bcd4",
+                          }}
+                        />
+                        <span style={{ flex: 1 }}>
+                          {turma.nome} ({turma.alunos?.length || 0} alunos)
+                        </span>
+                      </label>
+                    );
+                  })}
+
+                  <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                    <button
+                      onClick={() => aplicarEmMultiplasTurmas()}
+                      disabled={turmasSelecionadas.length === 0 || isApplying}
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: 8,
+                        background:
+                          turmasSelecionadas.length > 0 && !isApplying
+                            ? "#00bcd4"
+                            : "#666",
+                        color: "#fff",
+                        border: "none",
+                        cursor:
+                          turmasSelecionadas.length > 0 && !isApplying
+                            ? "pointer"
+                            : "not-allowed",
+                        opacity:
+                          turmasSelecionadas.length > 0 && !isApplying
+                            ? 1
+                            : 0.6,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {isApplying
+                        ? "Aplicando..."
+                        : `Aplicar em ${turmasSelecionadas.length} turma(s)`}
+                    </button>
+
+                    <button
+                      onClick={fecharModalAplicar}
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: 8,
+                        background: "#b71c1c",
+                        color: "#fff",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                      disabled={isApplying}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
+        </div>
 
         {/* Modal de criação de turma adaptado */}
         <div
@@ -814,7 +950,7 @@ export default function PageProfessor() {
               <div className={styles.desempenhoLinha} key={idx}>
                 <span>{aluno.nome}</span>
                 <span>
-                  Acertos:
+                  Acertos:{" "}
                   <span className={styles.acertosBadge}>{aluno.acertos}</span>
                 </span>
               </div>

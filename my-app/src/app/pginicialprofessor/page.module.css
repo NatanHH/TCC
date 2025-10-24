@@ -41,7 +41,8 @@
 
 .turmaBtn {
   border: 2px solid rgba(0, 188, 212, 0.16);
-  padding: 12px 14px;
+  padding: 0;
+  position: relative;
   margin-bottom: 10px;
   text-align: left;
   background-color: transparent;
@@ -428,3 +429,62 @@
     align-self: flex-end;
   }
 }
+
+/* Novos estilos para a lista de turmas e ícone de exclusão */
+.turmaContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  position: relative;
+}
+
+.turmaInfo {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+}
+
+.deleteIcon {
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+  opacity: 0.6;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+}
+
+.deleteIcon:hover {
+  opacity: 1;
+  background: rgba(255, 68, 68, 0.2);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.deleteIcon:active {
+  transform: translateY(-50%) scale(0.9);
+}
+
+/* Esconder lixeira por padrão, mostrar no hover da turma */
+.turmaBtn .deleteIcon {
+  opacity: 0;
+  transition: all 0.3s ease;
+}
+
+.turmaBtn:hover .deleteIcon {
+  opacity: 0.8;
+}
+
+.turmaBtn .deleteIcon:hover {
+  opacity: 1 !important;
+}
+
