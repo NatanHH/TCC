@@ -162,7 +162,7 @@ export default function PageProfessor() {
   async function fetchAtividadesTurma(idTurma: number) {
     setLoadingAtividades(true);
     try {
-      const res = await fetch(`/api/atividadesturma?turmaId=${idTurma}`);
+      const res = await fetch(`/api/atividades`);
       let data: any = null;
       try {
         data = await res.json();

@@ -29,6 +29,9 @@ model Professor {
   turmas      Turma[]
   atividades  Atividade[]           // relação atual (mantida temporariamente)
   atividadesRelacao AtividadeProfessor[]
+
+  // opções: relação para aplicações realizadas (AtividadeTurma)
+  aplicacoesAtividadeTurma AtividadeTurma[]  // novos registros criados pelo professor quando aplica atividades
 }
 
 model Aluno {
@@ -96,10 +99,16 @@ model AtividadeTurma {
   idAtividadeTurma Int    @id @default(autoincrement())
   idAtividade      Int
   idTurma          Int
+  idProfessor      Int?    // novo: professor que aplicou a atividade nesta turma
   dataAplicacao    DateTime?
 
   atividade Atividade @relation(fields: [idAtividade], references: [idAtividade])
   turma     Turma     @relation(fields: [idTurma], references: [idTurma])
+  professor Professor? @relation(fields: [idProfessor], references: [idProfessor])
+
+  @@index([idAtividade])
+  @@index([idTurma])
+  @@index([idProfessor])
 }
 
 model Alternativa {

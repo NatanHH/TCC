@@ -109,7 +109,7 @@ export default function PainelAdm() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/professores", {
+      const res = await fetch("/api/professores/professor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

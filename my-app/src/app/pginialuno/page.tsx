@@ -1,6 +1,14 @@
 "use client";
-import React, { JSX, useEffect, useState } from "react";
+import React, { JSX, useEffect, useState, useCallback } from "react";
 import styles from "./page.module.css";
+import { useRouter } from "next/navigation";
+
+type ArquivoResumo = {
+  idArquivo: number;
+  url: string;
+  tipoArquivo?: string | null;
+  nomeArquivo?: string | null;
+};
 
 type AtividadeResumo = {
   idAtividade: number;
@@ -13,12 +21,7 @@ type AtividadeResumo = {
     idTurma: number;
     nome: string;
   };
-  arquivos?: {
-    idArquivo: number;
-    url: string;
-    tipoArquivo?: string | null;
-    nomeArquivo?: string | null;
-  }[];
+  arquivos?: ArquivoResumo[];
 };
 
 export default function Page(): JSX.Element {
@@ -34,88 +37,162 @@ export default function Page(): JSX.Element {
   const [alunoNome, setAlunoNome] = useState<string>("Aluno");
   const [alunoEmail, setAlunoEmail] = useState<string>("aluno@exemplo.com");
 
-  // Carregar dados do localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const id = localStorage.getItem("idAluno");
-      const nome = localStorage.getItem("alunoNome");
-      const email = localStorage.getItem("alunoEmail");
+  const router = useRouter();
 
-      if (id) setAlunoId(Number(id));
-      if (nome) setAlunoNome(nome);
-      if (email) setAlunoEmail(email);
+  // Carregar dados do localStorage (executa uma vez)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = localStorage.getItem("idAluno");
+    const nome = localStorage.getItem("alunoNome");
+    const email = localStorage.getItem("alunoEmail");
+
+    if (id) setAlunoId(Number(id));
+    if (nome) setAlunoNome(nome);
+    if (email) setAlunoEmail(email);
+
+    // Se não há id do aluno, redireciona para login (evita chamadas desnecessárias)
+    if (!id) {
+      // opcional: comentar se não quer redirecionar automaticamente
+      // router.push("/login");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Buscar atividades quando alunoId estiver disponível
+  // Buscar atividades quando alunoId estiver disponível (com fallback para localStorage)
   useEffect(() => {
-    if (alunoId) {
-      fetchAtividades();
+    const idFromStore =
+      typeof window !== "undefined" ? localStorage.getItem("idAluno") : null;
+    const effectiveId = alunoId ?? (idFromStore ? Number(idFromStore) : null);
+
+    if (!effectiveId) {
+      // Se quiser redirecionar quando não estiver logado, descomente:
+      // router.push("/login");
+      setAtividades([]);
+      return;
     }
+
+    const ctrl = new AbortController();
+
+    async function doFetch() {
+      setLoading(true);
+      try {
+        const q = encodeURIComponent(String(effectiveId));
+        // chama a API correta para alunos
+        const res = await fetch(`/api/listaratividades?alunoId=${q}`, {
+          signal: ctrl.signal,
+          headers: { Accept: "application/json" },
+        });
+
+        if (!res.ok) {
+          if (res.status === 404) {
+            setAtividades([]);
+            return;
+          }
+          const text = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status} ${text}`);
+        }
+
+        const data = await res.json().catch(() => null);
+
+        // aceita várias formas de resposta: array direto ou { atividades: [...] }
+        if (Array.isArray(data)) {
+          setAtividades(data);
+        } else if (data && Array.isArray((data as any).atividades)) {
+          setAtividades((data as any).atividades);
+        } else {
+          console.warn("fetchAtividades: resposta inesperada:", data);
+          setAtividades([]);
+        }
+      } catch (err: any) {
+        if (err.name === "AbortError") return;
+        console.error("Erro ao buscar atividades:", err);
+        setAtividades([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    doFetch();
+    return () => ctrl.abort();
   }, [alunoId]);
 
-  // FUNÇÃO SIMPLES igual ao professor
-  async function fetchAtividades() {
-    if (!alunoId) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/aluno/atividades?alunoId=${alunoId}`);
-
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-
-      const data = await res.json();
-
-      if (Array.isArray(data)) {
-        setAtividades(data);
-      } else {
-        console.error("Resposta não é um array:", data);
-        setAtividades([]);
-      }
-    } catch (err) {
-      console.error("Erro ao buscar atividades:", err);
-      setAtividades([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function mostrarDetalhe(atividade: AtividadeResumo) {
+  // handlers UI
+  const mostrarDetalhe = useCallback((atividade: AtividadeResumo) => {
     setAtividadeSelecionada(atividade);
-  }
+  }, []);
 
-  function voltarParaLista() {
+  const voltarParaLista = useCallback(() => {
     setAtividadeSelecionada(null);
-  }
+  }, []);
 
-  function toggleUserPopup() {
+  const toggleUserPopup = useCallback(() => {
     setPopupAberto((prev) => !prev);
-  }
+  }, []);
 
-  function mostrarDesempenho() {
+  const mostrarDesempenho = useCallback(() => {
     setModalAberto(true);
-  }
+  }, []);
 
-  function fecharModalDesempenho() {
+  const fecharModalDesempenho = useCallback(() => {
     setModalAberto(false);
+  }, []);
+
+  // abrir anexo (igual à página do professor)
+  function abrirAnexo(idArquivo?: number, url?: string) {
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    if (!idArquivo) {
+      alert("Arquivo indisponível.");
+      return;
+    }
+
+    fetch(`/api/attachments/${encodeURIComponent(String(idArquivo))}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`${res.status} ${text}`);
+        }
+
+        const contentType = res.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+          const json = await res.json().catch(() => null);
+          if (json?.url) {
+            window.open(json.url, "_blank", "noopener,noreferrer");
+            return;
+          }
+        }
+
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank", "noopener,noreferrer");
+        // libera a URL depois
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      })
+      .catch((err) => {
+        console.error("Erro ao abrir anexo:", err);
+        alert("Não foi possível abrir o arquivo.");
+      });
   }
 
-  function abrirAnexo(idArquivo: number) {
-    window.open(`/api/attachments/${idArquivo}`, "_blank");
-  }
-
-  function formatarData(dataString?: string | null) {
+  // formato de datas com fallback
+  const formatarData = useCallback((dataString?: string | null) => {
     if (!dataString) return "";
-    return new Date(dataString).toLocaleDateString("pt-BR");
-  }
+    try {
+      return new Date(dataString).toLocaleDateString("pt-BR");
+    } catch {
+      return dataString;
+    }
+  }, []);
 
   function sairSistema() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("idAluno");
       localStorage.removeItem("alunoNome");
       localStorage.removeItem("alunoEmail");
+      // Redireciona para login
       window.location.href = "/login";
     }
   }
@@ -164,6 +241,7 @@ export default function Page(): JSX.Element {
               className={`${styles.userPopup} ${
                 popupAberto ? styles.userPopupActive : ""
               }`}
+              aria-hidden={!popupAberto}
             >
               <h3>Detalhes do Aluno</h3>
               <p>
@@ -183,7 +261,7 @@ export default function Page(): JSX.Element {
         <div style={{ width: "100%", maxWidth: 880, marginTop: 18 }}>
           {loading && <p style={{ color: "#fff" }}>Carregando atividades...</p>}
 
-          {!loading && atividades.length === 0 && (
+          {!loading && atividades.length === 0 && !atividadeSelecionada && (
             <div className={styles.card} style={{ textAlign: "center" }}>
               <h2 style={{ color: "#ff9800" }}>
                 📚 Nenhuma Atividade Disponível
@@ -198,10 +276,16 @@ export default function Page(): JSX.Element {
             !atividadeSelecionada &&
             atividades.map((a) => (
               <div
-                key={`${a.idAtividade}-${a.turma?.idTurma}`}
+                key={`${a.idAtividade}-${a.turma?.idTurma ?? "0"}`}
                 className={styles.card}
                 style={{ cursor: "pointer" }}
                 onClick={() => mostrarDetalhe(a)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") mostrarDetalhe(a);
+                }}
+                aria-label={`Abrir detalhes da atividade ${a.titulo}`}
               >
                 <div
                   style={{ display: "flex", justifyContent: "space-between" }}
@@ -228,7 +312,9 @@ export default function Page(): JSX.Element {
                     >
                       {a.tipo || "GERAL"}
                     </div>
-                    <div style={{ color: "#ff9800" }}>Nota: {a.nota}/10</div>
+                    <div style={{ color: "#ff9800" }}>
+                      Nota: {typeof a.nota === "number" ? `${a.nota}/10` : "—"}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -239,13 +325,7 @@ export default function Page(): JSX.Element {
             <div className={styles.atividadeDetalhe}>
               <div style={{ marginBottom: 20 }}>
                 <h1>{atividadeSelecionada.titulo}</h1>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    marginBottom: 12,
-                  }}
-                >
+                <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
                   <span
                     style={{
                       background: "#00bcd4",
@@ -266,7 +346,10 @@ export default function Page(): JSX.Element {
                       fontSize: "0.9em",
                     }}
                   >
-                    Nota: {atividadeSelecionada.nota}/10
+                    Nota:{" "}
+                    {typeof atividadeSelecionada.nota === "number"
+                      ? `${atividadeSelecionada.nota}/10`
+                      : "—"}
                   </span>
                   <span
                     style={{
@@ -277,9 +360,15 @@ export default function Page(): JSX.Element {
                       fontSize: "0.9em",
                     }}
                   >
-                    Turma: {atividadeSelecionada.turma?.nome}
+                    Turma: {atividadeSelecionada.turma?.nome ?? "—"}
                   </span>
                 </div>
+                {atividadeSelecionada.dataAplicacao && (
+                  <div style={{ color: "#bdbdda", marginTop: 6 }}>
+                    Aplicada em:{" "}
+                    {formatarData(atividadeSelecionada.dataAplicacao)}
+                  </div>
+                )}
               </div>
 
               <p style={{ lineHeight: 1.6, marginBottom: 20 }}>
@@ -288,52 +377,57 @@ export default function Page(): JSX.Element {
 
               {/* Arquivos/Anexos */}
               {atividadeSelecionada.arquivos &&
-                atividadeSelecionada.arquivos.length > 0 && (
-                  <div style={{ marginTop: 20, marginBottom: 20 }}>
-                    <h3 style={{ color: "#dcd7ee", marginBottom: 12 }}>
-                      📎 Arquivos da Atividade (
-                      {atividadeSelecionada.arquivos.length})
-                    </h3>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                      }}
-                    >
-                      {atividadeSelecionada.arquivos.map((arquivo) => (
-                        <div
-                          key={arquivo.idArquivo}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: 12,
-                            background: "#3a2b4f",
-                            borderRadius: 8,
-                            border: "1px solid #555",
-                          }}
-                        >
-                          <div style={{ color: "#fff" }}>
-                            <div style={{ fontWeight: "bold" }}>
-                              {arquivo.nomeArquivo ||
-                                arquivo.url.split("/").pop()}
-                            </div>
-                            <div style={{ fontSize: "0.8em", color: "#bbb" }}>
-                              {arquivo.tipoArquivo || "Arquivo"}
-                            </div>
+              atividadeSelecionada.arquivos.length > 0 ? (
+                <div style={{ marginTop: 20, marginBottom: 20 }}>
+                  <h3 style={{ color: "#dcd7ee", marginBottom: 12 }}>
+                    📎 Arquivos da Atividade (
+                    {atividadeSelecionada.arquivos.length})
+                  </h3>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    {atividadeSelecionada.arquivos.map((arquivo) => (
+                      <div
+                        key={arquivo.idArquivo}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: 12,
+                          background: "#3a2b4f",
+                          borderRadius: 8,
+                          border: "1px solid #555",
+                        }}
+                      >
+                        <div style={{ color: "#fff" }}>
+                          <div style={{ fontWeight: "bold" }}>
+                            {arquivo.nomeArquivo ||
+                              arquivo.url.split("/").pop()}
                           </div>
-                          <button
-                            className={styles.btnAplicar}
-                            onClick={() => abrirAnexo(arquivo.idArquivo)}
-                          >
-                            📥 Abrir / Baixar
-                          </button>
+                          <div style={{ fontSize: "0.8em", color: "#bbb" }}>
+                            {arquivo.tipoArquivo || "Arquivo"}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                        <button
+                          className={styles.btnAplicar}
+                          onClick={() =>
+                            abrirAnexo(arquivo.idArquivo, arquivo.url)
+                          }
+                          aria-label={`Abrir anexo ${
+                            arquivo.nomeArquivo || arquivo.idArquivo
+                          }`}
+                        >
+                          📥 Abrir / Baixar
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              ) : (
+                <div style={{ color: "#bdbdda", marginTop: 8 }}>
+                  Nenhum anexo disponível para esta atividade.
+                </div>
+              )}
 
               <div className={styles.botoesAtividade} style={{ marginTop: 30 }}>
                 <button
