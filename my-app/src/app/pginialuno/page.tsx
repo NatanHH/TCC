@@ -24,6 +24,16 @@ type AtividadeResumo = {
   arquivos?: ArquivoResumo[];
 };
 
+type RespostaResumo = {
+  idResposta: number;
+  idAluno: number;
+  aluno?: { idAluno: number; nome: string; email: string } | null;
+  respostaTexto?: string | null;
+  dataAplicacao?: string | null;
+  notaObtida?: number | null;
+  feedback?: string | null;
+};
+
 export default function Page(): JSX.Element {
   const [atividades, setAtividades] = useState<AtividadeResumo[]>([]);
   const [atividadeSelecionada, setAtividadeSelecionada] =
@@ -32,12 +42,23 @@ export default function Page(): JSX.Element {
   const [popupAberto, setPopupAberto] = useState<boolean>(false);
   const [modalAberto, setModalAberto] = useState<boolean>(false);
 
-  // Estados para informações do aluno
+  // Estados para informação do aluno
   const [alunoId, setAlunoId] = useState<number | null>(null);
-  const [alunoNome, setAlunoNome] = useState<string>("Aluno");
-  const [alunoEmail, setAlunoEmail] = useState<string>("aluno@exemplo.com");
+  const [alunoNome, setAlunoNome] = useState<string>("");
+  const [alunoEmail, setAlunoEmail] = useState<string>("");
+
+  // --- Novos estados para o formulário de resolução (mesma página) ---
+  const [resolverAberto, setResolverAberto] = useState<boolean>(false);
+  const [respostaTexto, setRespostaTexto] = useState<string>("");
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   const router = useRouter();
+
+  // Estado para a resposta do aluno (nota + feedback) mostrada no modal de desempenho
+  const [minhaResposta, setMinhaResposta] = useState<RespostaResumo | null>(
+    null
+  );
+  const [loadingMinhaResposta, setLoadingMinhaResposta] = useState(false);
 
   // Carregar dados do localStorage (executa uma vez)
   useEffect(() => {
@@ -49,24 +70,15 @@ export default function Page(): JSX.Element {
     if (id) setAlunoId(Number(id));
     if (nome) setAlunoNome(nome);
     if (email) setAlunoEmail(email);
-
-    // Se não há id do aluno, redireciona para login (evita chamadas desnecessárias)
-    if (!id) {
-      // opcional: comentar se não quer redirecionar automaticamente
-      // router.push("/login");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Buscar atividades quando alunoId estiver disponível (com fallback para localStorage)
+  // Buscar atividades (igual antes)
   useEffect(() => {
     const idFromStore =
       typeof window !== "undefined" ? localStorage.getItem("idAluno") : null;
     const effectiveId = alunoId ?? (idFromStore ? Number(idFromStore) : null);
 
     if (!effectiveId) {
-      // Se quiser redirecionar quando não estiver logado, descomente:
-      // router.push("/login");
       setAtividades([]);
       return;
     }
@@ -77,7 +89,6 @@ export default function Page(): JSX.Element {
       setLoading(true);
       try {
         const q = encodeURIComponent(String(effectiveId));
-        // chama a API correta para alunos
         const res = await fetch(`/api/listaratividades?alunoId=${q}`, {
           signal: ctrl.signal,
           headers: { Accept: "application/json" },
@@ -94,7 +105,6 @@ export default function Page(): JSX.Element {
 
         const data = await res.json().catch(() => null);
 
-        // aceita várias formas de resposta: array direto ou { atividades: [...] }
         if (Array.isArray(data)) {
           setAtividades(data);
         } else if (data && Array.isArray((data as any).atividades)) {
@@ -116,7 +126,7 @@ export default function Page(): JSX.Element {
     return () => ctrl.abort();
   }, [alunoId]);
 
-  // handlers UI
+  // UI handlers
   const mostrarDetalhe = useCallback((atividade: AtividadeResumo) => {
     setAtividadeSelecionada(atividade);
   }, []);
@@ -129,55 +139,88 @@ export default function Page(): JSX.Element {
     setPopupAberto((prev) => !prev);
   }, []);
 
-  const mostrarDesempenho = useCallback(() => {
-    setModalAberto(true);
-  }, []);
-
   const fecharModalDesempenho = useCallback(() => {
     setModalAberto(false);
   }, []);
 
-  // abrir anexo (igual à página do professor)
+  // Abre o modal/section de resolver atividade (na mesma página)
+  function abrirResolver(atividade: AtividadeResumo) {
+    setAtividadeSelecionada(atividade);
+    setRespostaTexto("");
+    setResolverAberto(true);
+  }
+
+  function fecharResolver() {
+    setResolverAberto(false);
+    setRespostaTexto("");
+  }
+
+  // abrir anexo (mantido)
   function abrirAnexo(idArquivo?: number, url?: string) {
     if (url) {
       window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
-
     if (!idArquivo) {
       alert("Arquivo indisponível.");
       return;
     }
-
-    fetch(`/api/attachments/${encodeURIComponent(String(idArquivo))}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`${res.status} ${text}`);
-        }
-
-        const contentType = res.headers.get("content-type") ?? "";
-        if (contentType.includes("application/json")) {
-          const json = await res.json().catch(() => null);
-          if (json?.url) {
-            window.open(json.url, "_blank", "noopener,noreferrer");
-            return;
-          }
-        }
-
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, "_blank", "noopener,noreferrer");
-        // libera a URL depois
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-      })
-      .catch((err) => {
-        console.error("Erro ao abrir anexo:", err);
-        alert("Não foi possível abrir o arquivo.");
-      });
+    window.open(
+      `/api/attachments/${encodeURIComponent(String(idArquivo))}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   }
 
-  // formato de datas com fallback
+  // envio do formulário inline (mesma página)
+  async function handleEnviarResposta(e?: React.FormEvent) {
+    try {
+      setSubmitting(true);
+
+      const payload = {
+        idAtividade: atividadeSelecionada?.idAtividade ?? null,
+        idAluno: alunoId ?? null,
+        respostaTexto: respostaTexto ?? "",
+      };
+
+      // agora enviamos JSON (sem anexos)
+      const res = await fetch("/api/respostas/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(
+          json?.error || `Erro ao enviar resposta (${res.status})`
+        );
+      }
+      alert("Resposta enviada com sucesso!");
+      // opcional: atualizar lista (re-fetch)
+      const id = alunoId;
+      const q = encodeURIComponent(String(id));
+      fetch(`/api/listaratividades?alunoId=${q}`).then(async (r) => {
+        try {
+          if (r.ok) {
+            const d = await r.json().catch(() => null);
+            if (Array.isArray(d)) setAtividades(d);
+            else if (d && Array.isArray(d.atividades))
+              setAtividades(d.atividades);
+          }
+        } catch {}
+      });
+      fecharResolver();
+      setAtividadeSelecionada(null);
+    } catch (err: any) {
+      console.error("Erro ao enviar resposta:", err);
+      alert(err?.message || "Erro ao enviar resposta.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // formato de datas
   const formatarData = useCallback((dataString?: string | null) => {
     if (!dataString) return "";
     try {
@@ -192,9 +235,61 @@ export default function Page(): JSX.Element {
       localStorage.removeItem("idAluno");
       localStorage.removeItem("alunoNome");
       localStorage.removeItem("alunoEmail");
-      // Redireciona para login
       window.location.href = "/login";
     }
+  }
+
+  // --- NOVO: buscar a resposta (minha) para a atividade selecionada e mostrar feedback ---
+  async function fetchMinhaRespostaParaAtividade(atividadeId?: number) {
+    if (!atividadeId || !alunoId) {
+      setMinhaResposta(null);
+      return;
+    }
+    setLoadingMinhaResposta(true);
+    try {
+      const res = await fetch(
+        `/api/respostas?atividadeId=${encodeURIComponent(String(atividadeId))}`
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        console.warn("fetchMinhaResposta: non-ok", res.status, data);
+        setMinhaResposta(null);
+        return;
+      }
+      if (Array.isArray(data)) {
+        const found = data.find(
+          (r: any) =>
+            r.idAluno === alunoId ||
+            (r.aluno && Number(r.aluno.idAluno) === Number(alunoId))
+        );
+        setMinhaResposta(found ?? null);
+      } else if (data && Array.isArray(data.respostas)) {
+        const found = data.respostas.find(
+          (r: any) =>
+            r.idAluno === alunoId ||
+            (r.aluno && Number(r.aluno.idAluno) === Number(alunoId))
+        );
+        setMinhaResposta(found ?? null);
+      } else {
+        setMinhaResposta(null);
+      }
+    } catch (err) {
+      console.error("Erro ao buscar minha resposta:", err);
+      setMinhaResposta(null);
+    } finally {
+      setLoadingMinhaResposta(false);
+    }
+  }
+
+  // Quando o aluno clica em "Ver Meu Desempenho", buscamos a resposta individual e abrimos o modal
+  async function mostrarDesempenho() {
+    // ensure there's a selected activity
+    if (!atividadeSelecionada) {
+      alert("Selecione uma atividade antes de ver o desempenho.");
+      return;
+    }
+    await fetchMinhaRespostaParaAtividade(atividadeSelecionada.idAtividade);
+    setModalAberto(true);
   }
 
   return (
@@ -232,8 +327,10 @@ export default function Page(): JSX.Element {
                 alt="Avatar"
               />
               <div className={styles.userDetails}>
-                <span className={styles.userName}>{alunoNome}</span>
-                <span className={styles.userEmail}>{alunoEmail}</span>
+                <span className={styles.userName}>{alunoNome || "Aluno"}</span>
+                <span className={styles.userEmail}>
+                  {alunoEmail || "aluno@exemplo.com"}
+                </span>
               </div>
             </div>
 
@@ -410,9 +507,7 @@ export default function Page(): JSX.Element {
                         </div>
                         <button
                           className={styles.btnAplicar}
-                          onClick={() =>
-                            abrirAnexo(arquivo.idArquivo, arquivo.url)
-                          }
+                          onClick={() => abrirAnexo(arquivo.idArquivo)}
                           aria-label={`Abrir anexo ${
                             arquivo.nomeArquivo || arquivo.idArquivo
                           }`}
@@ -432,27 +527,16 @@ export default function Page(): JSX.Element {
               <div className={styles.botoesAtividade} style={{ marginTop: 30 }}>
                 <button
                   className={styles.btnFormulario}
-                  onClick={() =>
-                    alert(
-                      `Abrindo formulário para resolver: ${atividadeSelecionada.titulo}`
-                    )
-                  }
+                  onClick={() => abrirResolver(atividadeSelecionada)}
                 >
                   📝 Resolver Atividade
                 </button>
-                <button
-                  className={styles.btnEnviar}
-                  onClick={() =>
-                    alert(
-                      `Enviando solução da atividade: ${atividadeSelecionada.titulo}`
-                    )
-                  }
-                >
-                  📤 Enviar Solução
-                </button>
+
+                {/* Removed "Enviar Solução" button as requested */}
+
                 <button
                   className={styles.btnVerdesempenho}
-                  onClick={mostrarDesempenho}
+                  onClick={() => mostrarDesempenho()}
                 >
                   📊 Ver Meu Desempenho
                 </button>
@@ -464,7 +548,70 @@ export default function Page(): JSX.Element {
           )}
         </div>
 
-        {/* Modal de Desempenho */}
+        {/* Modal de resolução (mesma página) */}
+        <div
+          className={`${styles.modal} ${
+            resolverAberto ? styles.modalActive : ""
+          }`}
+        >
+          {resolverAberto && atividadeSelecionada && (
+            <div className={styles.modalContent}>
+              <h2>
+                📝 Resolver: <br />
+                <span style={{ color: "#00bcd4" }}>
+                  {atividadeSelecionada.titulo}
+                </span>
+              </h2>
+              <div style={{ marginTop: 8, color: "#bdbdda" }}>
+                <div>
+                  <strong>Aluno:</strong> {alunoNome || "—"}
+                </div>
+                <div>
+                  <strong>Email:</strong> {alunoEmail || "—"}
+                </div>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleEnviarResposta();
+                }}
+                style={{ marginTop: 12 }}
+              >
+                <label style={{ display: "block", marginBottom: 8 }}>
+                  Sua resposta
+                </label>
+                <textarea
+                  value={respostaTexto}
+                  onChange={(e) => setRespostaTexto(e.target.value)}
+                  rows={8}
+                  style={{ width: "100%", padding: 8 }}
+                />
+
+                <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className={styles.btn}
+                    style={{ background: "#00bcd4", color: "#fff" }}
+                  >
+                    {submitting ? "Enviando..." : "Enviar Resposta"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fecharResolver}
+                    className={styles.btn}
+                    style={{ background: "#b71c1c", color: "#fff" }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* Modal de Desempenho (atualizado para mostrar feedback individual) */}
         <div
           className={`${styles.modal} ${modalAberto ? styles.modalActive : ""}`}
         >
@@ -478,21 +625,108 @@ export default function Page(): JSX.Element {
                   : "Atividade"}
               </span>
             </h2>
-            <div className={styles.desempenhoLinha}>
-              <span>{alunoNome}</span>
-              <span>
-                Status: <span className={styles.acertosBadge}>Pendente</span>
-              </span>
+
+            <div style={{ marginTop: 12 }}>
+              <strong>Turma:</strong> {atividadeSelecionada?.turma?.nome ?? "—"}
             </div>
-            <p style={{ color: "#bdbdda", marginTop: 12 }}>
-              Resolva a atividade para ver seu desempenho aqui.
-            </p>
-            <button
-              className={styles.btnVoltarModal}
-              onClick={fecharModalDesempenho}
-            >
-              Voltar
-            </button>
+
+            <div style={{ marginTop: 12 }}>
+              {loadingMinhaResposta ? (
+                <p>Carregando seu desempenho...</p>
+              ) : minhaResposta ? (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
+                  <div style={{ fontWeight: "bold", color: "#fff" }}>
+                    {minhaResposta.aluno?.nome ??
+                      `Você (ID ${minhaResposta.idAluno})`}
+                  </div>
+
+                  <div style={{ color: "#dcd7ee" }}>
+                    <strong>Data de envio:</strong>{" "}
+                    {minhaResposta.dataAplicacao
+                      ? formatarData(minhaResposta.dataAplicacao)
+                      : "—"}
+                  </div>
+
+                  <div style={{ color: "#dcd7ee" }}>
+                    <strong>Nota:</strong>{" "}
+                    {typeof minhaResposta.notaObtida === "number"
+                      ? `${minhaResposta.notaObtida}/10`
+                      : "Ainda não corrigido"}
+                  </div>
+
+                  <div>
+                    <strong style={{ display: "block", marginBottom: 6 }}>
+                      Feedback do professor
+                    </strong>
+                    <div
+                      style={{
+                        background: "#2b2745",
+                        padding: 12,
+                        borderRadius: 8,
+                        color: "#fff",
+                      }}
+                    >
+                      {minhaResposta.feedback
+                        ? minhaResposta.feedback
+                        : "Nenhum feedback foi fornecido ainda."}
+                    </div>
+                  </div>
+
+                  {/* Opcional: botões rápidos */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      className={styles.btn}
+                      onClick={() => {
+                        setModalAberto(false);
+                      }}
+                    >
+                      Fechar
+                    </button>
+                    {/* Se quiser abrir página de correção detalhada do professor (não disponível para aluno) pode direcionar a outro lugar */}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ color: "#bdbdda" }}>
+                    Você ainda não enviou resposta para essa atividade ou ela
+                    ainda não foi registrada.
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      className={styles.btn}
+                      onClick={() => {
+                        setModalAberto(false);
+                      }}
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      className={styles.btnFormulario}
+                      onClick={() => {
+                        setModalAberto(false);
+                        abrirResolver(atividadeSelecionada!);
+                      }}
+                    >
+                      📝 Resolver agora
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>

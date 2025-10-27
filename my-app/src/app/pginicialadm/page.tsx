@@ -149,7 +149,7 @@ export default function PainelAdm() {
       return;
     }
     try {
-      const res = await fetch("/api/professores", {
+      const res = await fetch("/api/professores/professor", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -337,11 +337,18 @@ export default function PainelAdm() {
   async function handleDeleteAtividade(id: number) {
     if (!confirm("Deseja realmente excluir esta atividade?")) return;
     try {
-      const res = await fetch(`/api/atividades/${id}`, { method: "DELETE" });
-      const text = await res.text().catch(() => "");
+      // chama a rota dinâmica correta: /api/atividades/:id
+      const res = await fetch(
+        `/api/atividades/${encodeURIComponent(String(id))}`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        console.error("Erro ao deletar atividade:", res.status, text);
-        alert("Erro ao deletar atividade. Veja console.");
+        console.error("Erro ao deletar atividade:", res.status, data);
+        alert(data?.error || "Erro ao deletar atividade. Veja console.");
         return;
       }
       alert("Atividade removida");
