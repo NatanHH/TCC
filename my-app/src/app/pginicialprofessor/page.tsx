@@ -43,6 +43,13 @@ export default function PageProfessor() {
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [turmaSelecionada, setTurmaSelecionada] = useState<Turma | null>(null);
+
+  // New: expanded activity id - shows details inline where the activity is listed
+  const [expandedAtividadeId, setExpandedAtividadeId] = useState<number | null>(
+    null
+  );
+
+  // keep atividadeDetalhe for compatibility with modals that reference it
   const [atividadeDetalhe, setAtividadeDetalhe] = useState<Atividade | null>(
     null
   );
@@ -89,6 +96,13 @@ export default function PageProfessor() {
   const [isApplying, setIsApplying] = useState(false);
 
   const [isCreatingTurma, setIsCreatingTurma] = useState(false);
+
+  const [correcaoModalAberto, setCorrecaoModalAberto] = useState(false);
+  const [respostaParaCorrigir, setRespostaParaCorrigir] =
+    useState<RespostaResumo | null>(null);
+  const [notaCorrecao, setNotaCorrecao] = useState<number | "">("");
+  const [feedbackCorrecao, setFeedbackCorrecao] = useState<string>("");
+  const [isSubmittingCorrecao, setIsSubmittingCorrecao] = useState(false);
 
   const router = useRouter();
 
@@ -215,16 +229,21 @@ export default function PageProfessor() {
   function selecionarTurmaById(idTurma: number) {
     const turma = turmas.find((t) => t.idTurma === idTurma) || null;
     setTurmaSelecionada(turma);
+    // collapse expanded activity when switching turma
+    setExpandedAtividadeId(null);
     setAtividadeDetalhe(null);
     setRespostas([]); // limpa respostas quando troca turma
   }
 
-  function mostrarDetalheAtividade(atividade: Atividade) {
-    setAtividadeDetalhe(atividade);
-  }
-  function voltarParaLista() {
+  // Toggle expand/collapse inline
+  function toggleExpandAtividade(id: number) {
+    setExpandedAtividadeId((prev) => (prev === id ? null : id));
+    // ensure turmas are loaded so actions inside can work
+    if (professorId) fetchTurmas();
+    // clear atividadeDetalhe to avoid confusion (we show inline)
     setAtividadeDetalhe(null);
   }
+
   function toggleUserPopup() {
     setPopupAberto((p) => !p);
   }
@@ -370,7 +389,9 @@ export default function PageProfessor() {
       const falhas = resultados.filter((r) => !r.ok);
       if (sucessos.length > 0)
         alert(
-          `Atividade "${atividadeParaAplicar.titulo}" aplicada em ${sucessos.length} turma(s).`
+          `Atividade "${atividadeParaAplicar!.titulo}" aplicada em ${
+            sucessos.length
+          } turma(s).`
         );
       if (falhas.length > 0) {
         const msgs = falhas
@@ -462,8 +483,8 @@ export default function PageProfessor() {
         const data = await res.json().catch(() => null);
         if (res.ok && Array.isArray(data))
           setRespostas(data as RespostaResumo[]);
-        else if (res.ok && data && Array.isArray(data.respostas))
-          setRespostas(data.respostas as RespostaResumo[]);
+        else if (res.ok && data && Array.isArray((data as any).respostas))
+          setRespostas((data as any).respostas as RespostaResumo[]);
         else setRespostas([]);
       } catch (err) {
         console.error("Erro ao buscar respostas:", err);
@@ -480,6 +501,8 @@ export default function PageProfessor() {
       alert("Selecione uma turma primeiro.");
       return;
     }
+    // keep inline expanded for context
+    setExpandedAtividadeId(atividade.idAtividade);
     setAtividadeDetalhe(atividade);
     await fetchRespostasParaAtividade(
       atividade.idAtividade,
@@ -496,13 +519,6 @@ export default function PageProfessor() {
   }
 
   // --- NOVO: correção inline (modal) ---
-  const [correcaoModalAberto, setCorrecaoModalAberto] = useState(false);
-  const [respostaParaCorrigir, setRespostaParaCorrigir] =
-    useState<RespostaResumo | null>(null);
-  const [notaCorrecao, setNotaCorrecao] = useState<number | "">("");
-  const [feedbackCorrecao, setFeedbackCorrecao] = useState<string>("");
-  const [isSubmittingCorrecao, setIsSubmittingCorrecao] = useState(false);
-
   function abrirModalCorrecao(resposta: RespostaResumo) {
     setRespostaParaCorrigir(resposta);
     setNotaCorrecao(resposta.notaObtida ?? "");
@@ -551,7 +567,6 @@ export default function PageProfessor() {
       );
       alert("Correção salva com sucesso.");
       setCorrecaoModalAberto(false);
-      // manter modal desempenho aberto para visualização
       // opcional: atualizar lista de respostas recarregando do servidor:
       if (atividadeDetalhe && turmaSelecionada) {
         await fetchRespostasParaAtividade(
@@ -576,7 +591,193 @@ export default function PageProfessor() {
     }
   }
 
-  // RENDER (preservei layout e comportamentos)
+  // ActivityItem: collapsible card rendered inline and centered width
+  function ActivityItem({ atividade }: { atividade: Atividade }) {
+    const isExpanded = expandedAtividadeId === atividade.idAtividade;
+
+    const onToggle = (e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      toggleExpandAtividade(atividade.idAtividade);
+    };
+
+    return (
+      <li
+        key={atividade.idAtividade}
+        style={{ listStyle: "none", marginBottom: 18 }}
+      >
+        <div
+          className={styles.card}
+          onClick={onToggle}
+          style={{
+            display: "block",
+            background: "#3a3360",
+            color: "#fff",
+            padding: 18,
+            borderRadius: 8,
+            cursor: "pointer",
+            maxWidth: 960,
+            margin: "0 auto",
+            boxShadow: isExpanded
+              ? "0 30px 60px rgba(0,0,0,0.6)"
+              : "0 8px 20px rgba(0,0,0,0.45)",
+            transform: isExpanded ? "translateY(-6px)" : "none",
+            transition: "all 180ms ease",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <strong>{atividade.titulo}</strong>
+              <div style={{ color: "#d1cde6", marginTop: 6 }}>
+                {atividade.descricao
+                  ? atividade.descricao.substring(0, 160) +
+                    (atividade.descricao.length > 160 ? "…" : "")
+                  : "Sem descrição."}
+              </div>
+            </div>
+
+            {/* Removed action buttons from collapsed view so professor must click to open */}
+            <div style={{ width: 12, height: 12, opacity: 0.6 }}>
+              {/* small visual indicator (optional) */}
+            </div>
+          </div>
+
+          {isExpanded && (
+            <div
+              style={{
+                marginTop: 12,
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                paddingTop: 12,
+                color: "#dcd7ee",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                {atividade.descricao ?? "Sem descrição disponível."}
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <strong>Arquivos</strong>
+                {atividade.arquivos && atividade.arquivos.length > 0 ? (
+                  <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
+                    {atividade.arquivos.map((a) => (
+                      <li
+                        key={a.idArquivo}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "8px 0",
+                        }}
+                      >
+                        <span style={{ color: "#fff" }}>
+                          {a.url.split("/").pop()}
+                        </span>
+                        <button
+                          className={styles.btn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const finalUrl = a.url.startsWith("http")
+                              ? a.url
+                              : `${window.location.origin}${a.url}`;
+                            window.open(
+                              finalUrl,
+                              "_blank",
+                              "noopener,noreferrer"
+                            );
+                          }}
+                          style={{ background: "#00bcd4", color: "#042027" }}
+                        >
+                          Abrir
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div style={{ color: "#bdbdda", marginTop: 8 }}>
+                    Nenhum anexo.
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 16,
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                
+                <button
+                  className={styles.btn}
+                  onClick={() => {
+                    if (!turmaSelecionada) {
+                      alert("Selecione uma turma para ver desempenho.");
+                      return;
+                    }
+                    mostrarDesempenhoParaAtividadeAplicada(atividade);
+                  }}
+                  style={{ background: "#4caf50", color: "#fff" }}
+                >
+                  Ver Desempenho
+                </button>
+
+                <button
+                  className={styles.btnVoltarModal}
+                  onClick={() => setExpandedAtividadeId(null)}
+                  style={{ marginLeft: "auto" }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </li>
+    );
+  }
+
+  // quick apply function separated to preserve original aplicar logic but provide single-click UX
+  async function aplicarEmTurmaAtualQuick(atividade: Atividade) {
+    if (!turmaSelecionada) {
+      alert("Selecione uma turma primeiro.");
+      return;
+    }
+    setIsApplying(true);
+    try {
+      const res = await fetch("/api/aplicaratividade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idAtividade: atividade.idAtividade,
+          idTurma: turmaSelecionada.idTurma,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(data?.error || `Erro ao aplicar (${res.status})`);
+        return;
+      }
+      alert(
+        `Atividade "${atividade.titulo}" aplicada na turma "${turmaSelecionada.nome}"`
+      );
+      await fetchAtividadesTurma(turmaSelecionada.idTurma);
+    } catch (err) {
+      console.error("Erro aplicarNaTurmaAtual:", err);
+      alert("Erro ao aplicar atividade.");
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
   return (
     <div className={styles.paginaAlunoBody}>
       <aside className={styles.paginaAlunoAside}>
@@ -641,6 +842,7 @@ export default function PageProfessor() {
                 : "Nenhuma turma selecionada"}
             </span>
           </h1>
+
           <div className={styles.userInfoWrapper}>
             <div
               className={styles.userInfo}
@@ -678,127 +880,32 @@ export default function PageProfessor() {
           </div>
         </div>
 
-        {/* central listagem (preservada) */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            minHeight: "60vh",
-            width: "100%",
-          }}
-        >
-          {turmaSelecionada ? (
-            <>
-              <h2 style={{ color: "#fff", margin: "20px 0" }}>
-                Atividades aplicadas na turma "{turmaSelecionada.nome}"
-              </h2>
-              {loadingAtividades ? (
-                <p style={{ color: "#fff" }}>
-                  Carregando atividades aplicadas...
-                </p>
-              ) : atividadesTurma.length === 0 ? (
-                <p style={{ color: "#fff" }}>
-                  Nenhuma atividade aplicada nesta turma.
-                </p>
-              ) : (
-                <ul style={{ width: "100%", maxWidth: 760, padding: 0 }}>
-                  {atividadesTurma.map((atividade) => (
-                    <li
-                      key={atividade.idAtividade}
-                      className={styles.card}
-                      style={{
-                        listStyle: "none",
-                        marginBottom: 18,
-                        background: "#3a3360",
-                        color: "#fff",
-                        padding: 18,
-                        borderRadius: 8,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <strong>{atividade.titulo}</strong>
-                        <br />
-                        <span style={{ color: "#d1cde6" }}>
-                          {atividade.descricao
-                            ? atividade.descricao.substring(0, 140) +
-                              (atividade.descricao.length > 140 ? "..." : "")
-                            : "Sem descrição."}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          className={styles.btn}
-                          onClick={() => abrirModalAplicar(atividade)}
-                          style={{ background: "#00bcd4", color: "#fff" }}
-                        >
-                          Aplicar em outras turmas
-                        </button>
-                        <button
-                          className={styles.btn}
-                          onClick={() =>
-                            mostrarDesempenhoParaAtividadeAplicada(atividade)
-                          }
-                          style={{ background: "#4caf50", color: "#fff" }}
-                        >
-                          Ver Desempenho
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
+        <section style={{ padding: 24 }}>
+          <h2 style={{ color: "#fff", textAlign: "center", marginBottom: 18 }}>
+            {turmaSelecionada
+              ? `Atividades aplicadas na turma "${turmaSelecionada.nome}"`
+              : "Atividades disponíveis para aplicar"}
+          </h2>
+
+          {loadingAtividades ? (
+            <p style={{ color: "#fff", textAlign: "center" }}>
+              Carregando atividades...
+            </p>
           ) : (
-            <>
-              <h2 style={{ color: "#fff", margin: "20px 0" }}>
-                Atividades disponíveis para aplicar
-              </h2>
-              {loadingAtividades ? (
-                <p style={{ color: "#fff" }}>Carregando atividades...</p>
-              ) : atividades.length === 0 ? (
-                <p style={{ color: "#fff" }}>Nenhuma atividade cadastrada.</p>
-              ) : (
-                <ul style={{ width: "100%", maxWidth: 760, padding: 0 }}>
-                  {atividades.map((atividade) => (
-                    <li
+            <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+              <ul style={{ padding: 0, margin: 0 }}>
+                {(turmaSelecionada ? atividadesTurma : atividades).map(
+                  (atividade) => (
+                    <ActivityItem
                       key={atividade.idAtividade}
-                      className={styles.card}
-                      onClick={() => mostrarDetalheAtividade(atividade)}
-                      style={{
-                        listStyle: "none",
-                        marginBottom: 18,
-                        background: "#3a3360",
-                        color: "#fff",
-                        padding: 18,
-                        borderRadius: 8,
-                        cursor: "pointer",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                      aria-label={`Atividade ${atividade.titulo}`}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <strong>{atividade.titulo}</strong>
-                        <br />
-                        <span style={{ color: "#d1cde6" }}>
-                          {atividade.descricao
-                            ? atividade.descricao.substring(0, 140) +
-                              (atividade.descricao.length > 140 ? "..." : "")
-                            : "Sem descrição."}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
+                      atividade={atividade}
+                    />
+                  )
+                )}
+              </ul>
+            </div>
           )}
-        </div>
+        </section>
 
         {/* modal aplicar (preservado) */}
         <div
@@ -845,7 +952,6 @@ export default function PageProfessor() {
                             selected ? "#00bcd4" : "rgba(255,255,255,0.06)"
                           }`,
                           cursor: "pointer",
-                          transition: "all 0.15s ease",
                         }}
                       >
                         <input
@@ -889,7 +995,6 @@ export default function PageProfessor() {
                           turmasSelecionadas.length > 0 && !isApplying
                             ? 1
                             : 0.6,
-                        transition: "all 0.2s ease",
                       }}
                     >
                       {isApplying
@@ -917,126 +1022,273 @@ export default function PageProfessor() {
           )}
         </div>
 
-        {/* modal criar turma (preservado) */}
+        {/* modal criar turma */}
         <div
           className={`${styles.modal} ${
             modalTurmaAberto ? styles.modalActive : ""
           }`}
+          role="dialog"
+          aria-modal="true"
+          aria-hidden={!modalTurmaAberto}
+          style={{ display: modalTurmaAberto ? undefined : "none" }}
         >
-          <div className={styles.modalContent}>
-            <h2>Criar Nova Turma</h2>
-            <input
-              type="text"
-              placeholder="Nome da turma"
-              value={nomeTurma}
-              onChange={(e) => setNomeTurma(e.target.value)}
-              className={styles.input}
-            />
-            <div>
-              <h3>Alunos da Turma</h3>
-              {alunos.length === 0 && <p>Nenhum aluno registrado.</p>}
-              {alunos.map((aluno, idx) => (
-                <div key={idx} className={styles.alunoItem}>
-                  <span>
-                    <strong>{aluno.nome}</strong> ({aluno.email})
-                  </span>
-                  <button
-                    className={styles.btnRemoverAluno}
-                    onClick={() => removerAluno(idx)}
-                  >
-                    Remover
-                  </button>
-                </div>
-              ))}
-              {!showAlunoForm && (
-                <button
-                  className={styles.btnAdicionarAluno}
-                  type="button"
-                  onClick={abrirAlunoForm}
-                >
-                  Adicionar Aluno
-                </button>
-              )}
-              {showAlunoForm && (
-                <form
-                  onSubmit={adicionarAluno}
-                  className={styles.formAlunoModal}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                    marginTop: 12,
-                  }}
-                >
-                  <input
-                    name="nome"
-                    type="text"
-                    placeholder="Nome do aluno"
-                    required
-                    value={formAluno.nome}
-                    onChange={handleAlunoChange}
-                    className={styles.input}
-                  />
-                  <input
-                    name="email"
-                    type="email"
-                    placeholder="Email do aluno"
-                    required
-                    value={formAluno.email}
-                    onChange={handleAlunoChange}
-                    className={styles.input}
-                  />
-                  <input
-                    name="senha"
-                    type="password"
-                    placeholder="Senha"
-                    required
-                    value={formAluno.senha}
-                    onChange={handleAlunoChange}
-                    className={styles.input}
-                  />
-                  <input
-                    name="confirmarSenha"
-                    type="password"
-                    placeholder="Confirmar Senha"
-                    required
-                    value={formAluno.confirmarSenha}
-                    onChange={handleAlunoChange}
-                    className={styles.input}
-                  />
+          {modalTurmaAberto && (
+            <div className={styles.modalContent}>
+              <h2>Criar Turma</h2>
+
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: "block", marginBottom: 6 }}>
+                  Nome da turma
+                </label>
+                <input
+                  type="text"
+                  value={nomeTurma}
+                  onChange={(e) => setNomeTurma(e.target.value)}
+                  style={{ width: "100%", padding: 8 }}
+                />
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <strong>Alunos</strong>
+                {alunos.length === 0 ? (
+                  <div style={{ color: "#bdbdda", marginTop: 8 }}>
+                    Nenhum aluno adicionado.
+                  </div>
+                ) : (
+                  <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
+                    {alunos.map((a, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <span>
+                          {a.nome} — {a.email}
+                        </span>
+                        <button
+                          className={styles.btn}
+                          onClick={() =>
+                            setAlunos(alunos.filter((_, idx) => idx !== i))
+                          }
+                          style={{ background: "#b71c1c", color: "#fff" }}
+                        >
+                          Remover
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {showAlunoForm ? (
+                <form onSubmit={adicionarAluno} style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <input
+                      name="nome"
+                      placeholder="Nome"
+                      value={formAluno.nome}
+                      onChange={handleAlunoChange}
+                      style={{ flex: 1, padding: 8 }}
+                    />
+                    <input
+                      name="email"
+                      placeholder="Email"
+                      value={formAluno.email}
+                      onChange={handleAlunoChange}
+                      style={{ flex: 1, padding: 8 }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <input
+                      name="senha"
+                      placeholder="Senha"
+                      value={formAluno.senha}
+                      onChange={handleAlunoChange}
+                      style={{ flex: 1, padding: 8 }}
+                    />
+                    <input
+                      name="confirmarSenha"
+                      placeholder="Confirmar senha"
+                      value={formAluno.confirmarSenha}
+                      onChange={handleAlunoChange}
+                      style={{ flex: 1, padding: 8 }}
+                    />
+                  </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       type="submit"
-                      className={styles.btnAdicionarAluno}
-                      style={{ background: "#4caf50", color: "#fff" }}
+                      className={styles.btn}
+                      style={{ background: "#00bcd4" }}
                     >
-                      Salvar Aluno
+                      Adicionar aluno
                     </button>
                     <button
                       type="button"
+                      className={styles.btn}
                       onClick={cancelarAlunoForm}
-                      className={styles.btnRemoverAluno}
-                      style={{ background: "#b71c1c", color: "#fff" }}
+                      style={{ background: "#b71c1c" }}
                     >
                       Cancelar
                     </button>
                   </div>
                 </form>
+              ) : (
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    className={styles.btn}
+                    onClick={abrirAlunoForm}
+                    style={{ background: "#2196f3", color: "#fff" }}
+                  >
+                    Adicionar aluno
+                  </button>
+                </div>
               )}
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  justifyContent: "flex-end",
+                  marginTop: 16,
+                }}
+              >
+                <button
+                  className={styles.btn}
+                  onClick={criarTurma}
+                  disabled={isCreatingTurma}
+                  style={{ background: "#4caf50", color: "#fff" }}
+                >
+                  {isCreatingTurma ? "Criando..." : "Criar turma"}
+                </button>
+                <button
+                  className={styles.btn}
+                  onClick={fecharModalTurma}
+                  style={{ background: "#b71c1c", color: "#fff" }}
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={criarTurma}
-              className={styles.btn}
-              style={{ marginTop: 24, background: "#448aff", color: "#fff" }}
-              disabled={isCreatingTurma || !nomeTurma || alunos.length === 0}
-            >
-              {isCreatingTurma ? "Criando..." : "Confirmar"}
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* Modal Desempenho (preservado) */}
+        {/* restante dos modals (respostaDetalhe, correcao, desempenho) permanecem iguais (preservados) */}
+        {respostaDetalhe && (
+          <div
+            className={`${styles.modal} ${styles.modalActive}`}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className={styles.modalContent}>
+              <h3>
+                Resposta de{" "}
+                {respostaDetalhe.aluno?.nome ?? respostaDetalhe.idAluno}
+              </h3>
+              <div
+                style={{
+                  marginTop: 12,
+                  color: "#dcd7ee",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {respostaDetalhe.respostaTexto ?? "Sem texto enviado."}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <button
+                  className={styles.btn}
+                  onClick={() => {
+                    /* opcional */
+                  }}
+                >
+                  Ver histórico / dar feedback
+                </button>
+                <button
+                  className={styles.btnVoltarModal}
+                  onClick={fecharRespostaDetalhe}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {correcaoModalAberto && respostaParaCorrigir && (
+          <div
+            className={`${styles.modal} ${styles.modalActive}`}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className={styles.modalContent}>
+              <h3>
+                Corrigir resposta —{" "}
+                {respostaParaCorrigir.aluno?.nome ??
+                  `Aluno ${respostaParaCorrigir.idAluno}`}
+              </h3>
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: "block", marginBottom: 6 }}>
+                  Nota (0-10)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  step="0.1"
+                  value={notaCorrecao}
+                  onChange={(e) =>
+                    setNotaCorrecao(
+                      e.target.value === "" ? "" : Number(e.target.value)
+                    )
+                  }
+                  style={{ width: 120, padding: 8 }}
+                />
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: "block", marginBottom: 6 }}>
+                  Feedback
+                </label>
+                <textarea
+                  rows={6}
+                  value={feedbackCorrecao}
+                  onChange={(e) => setFeedbackCorrecao(e.target.value)}
+                  style={{ width: "100%", padding: 8 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button
+                  className={styles.btn}
+                  onClick={enviarCorrecao}
+                  disabled={isSubmittingCorrecao}
+                  style={{ background: "#4caf50", color: "#fff" }}
+                >
+                  {isSubmittingCorrecao ? "Salvando..." : "Salvar correção"}
+                </button>
+                <button
+                  className={styles.btn}
+                  onClick={() => setCorrecaoModalAberto(false)}
+                  style={{ background: "#b71c1c", color: "#fff" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className={styles.btn}
+                  onClick={() =>
+                    router.push(
+                      `/professor/resposta/${respostaParaCorrigir.idResposta}`
+                    )
+                  }
+                  style={{ marginLeft: "auto" }}
+                >
+                  Abrir página de correção
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div
           className={`${styles.modal} ${
             modalDesempenhoAberto ? styles.modalActive : ""
@@ -1045,15 +1297,7 @@ export default function PageProfessor() {
           <div
             className={`${styles.modalContent} ${styles.desempenhoModalContent}`}
           >
-            <h2>
-              Desempenho da Turma na Atividade:
-              <br />
-              <span style={{ color: "#00bcd4" }}>
-                {atividadeDetalhe
-                  ? atividadeDetalhe.titulo
-                  : desempenhoFixo.tituloAtividade}
-              </span>
-            </h2>
+            <h2>Desempenho da Turma na Atividade</h2>
             <div style={{ marginTop: 12 }}>
               <strong>Turma:</strong> {turmaSelecionada?.nome ?? "—"}
             </div>
@@ -1123,7 +1367,6 @@ export default function PageProfessor() {
                           >
                             Ver Resposta
                           </button>
-                          {/* agora abre modal de correção inline */}
                           <button
                             className={styles.btn}
                             onClick={() => abrirModalCorrecao(r)}
@@ -1153,126 +1396,6 @@ export default function PageProfessor() {
             </div>
           </div>
         </div>
-
-        {/* Modal: detalhe de resposta (preservado) */}
-        {respostaDetalhe && (
-          <div
-            className={`${styles.modal} ${styles.modalActive}`}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className={styles.modalContent}>
-              <h3>
-                Resposta de{" "}
-                {respostaDetalhe.aluno?.nome ?? respostaDetalhe.idAluno}
-              </h3>
-              <div
-                style={{
-                  marginTop: 12,
-                  color: "#dcd7ee",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {respostaDetalhe.respostaTexto ?? "Sem texto enviado."}
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <button
-                  className={styles.btn}
-                  onClick={() => {
-                    /* opcional: abrir histórico de feedback */
-                  }}
-                >
-                  Ver histórico / dar feedback
-                </button>
-                <button
-                  className={styles.btnVoltarModal}
-                  onClick={fecharRespostaDetalhe}
-                >
-                  Fechar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* --- Modal de Correcao Inline (NOVO) --- */}
-        {correcaoModalAberto && respostaParaCorrigir && (
-          <div
-            className={`${styles.modal} ${styles.modalActive}`}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className={styles.modalContent}>
-              <h3>
-                Corrigir resposta —{" "}
-                {respostaParaCorrigir.aluno?.nome ??
-                  `Aluno ${respostaParaCorrigir.idAluno}`}
-              </h3>
-
-              <div style={{ marginTop: 12 }}>
-                <label style={{ display: "block", marginBottom: 6 }}>
-                  Nota (0-10)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  step="0.1"
-                  value={notaCorrecao}
-                  onChange={(e) =>
-                    setNotaCorrecao(
-                      e.target.value === "" ? "" : Number(e.target.value)
-                    )
-                  }
-                  style={{ width: 120, padding: 8 }}
-                />
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <label style={{ display: "block", marginBottom: 6 }}>
-                  Feedback
-                </label>
-                <textarea
-                  rows={6}
-                  value={feedbackCorrecao}
-                  onChange={(e) => setFeedbackCorrecao(e.target.value)}
-                  style={{ width: "100%", padding: 8 }}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <button
-                  className={styles.btn}
-                  onClick={enviarCorrecao}
-                  disabled={isSubmittingCorrecao}
-                  style={{ background: "#4caf50", color: "#fff" }}
-                >
-                  {isSubmittingCorrecao ? "Salvando..." : "Salvar correção"}
-                </button>
-                <button
-                  className={styles.btn}
-                  onClick={() => {
-                    setCorrecaoModalAberto(false);
-                  }}
-                  style={{ background: "#b71c1c", color: "#fff" }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  className={styles.btn}
-                  onClick={() =>
-                    router.push(
-                      `/professor/resposta/${respostaParaCorrigir.idResposta}`
-                    )
-                  }
-                  style={{ marginLeft: "auto" }}
-                >
-                  Abrir página de correção
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

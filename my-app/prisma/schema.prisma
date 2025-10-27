@@ -134,7 +134,7 @@ model RespostaAlunoAtividade {
   aluno           Aluno             @relation(fields: [idAluno], references: [idAluno])
   atividade       Atividade         @relation(fields: [idAtividade], references: [idAtividade])
   alternativa     Alternativa?      @relation(fields: [idAlternativaEscolhida], references: [idAlternativa])
-  RespostaArquivo RespostaArquivo[]
+
 }
 
 model AtividadeProfessor {

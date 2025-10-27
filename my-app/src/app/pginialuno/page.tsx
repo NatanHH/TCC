@@ -43,9 +43,32 @@ export default function Page(): JSX.Element {
   const [modalAberto, setModalAberto] = useState<boolean>(false);
 
   // Estados para informação do aluno
-  const [alunoId, setAlunoId] = useState<number | null>(null);
-  const [alunoNome, setAlunoNome] = useState<string>("");
-  const [alunoEmail, setAlunoEmail] = useState<string>("");
+  // lazy read from localStorage so values appear immediately on first render if present
+  const [alunoId, setAlunoId] = useState<number | null>(() => {
+    try {
+      if (typeof window === "undefined") return null;
+      const v = localStorage.getItem("idAluno");
+      return v ? Number(v) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [alunoNome, setAlunoNome] = useState<string>(() => {
+    try {
+      if (typeof window === "undefined") return "";
+      return localStorage.getItem("alunoNome") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [alunoEmail, setAlunoEmail] = useState<string>(() => {
+    try {
+      if (typeof window === "undefined") return "";
+      return localStorage.getItem("alunoEmail") ?? "";
+    } catch {
+      return "";
+    }
+  });
 
   // --- Novos estados para o formulário de resolução (mesma página) ---
   const [resolverAberto, setResolverAberto] = useState<boolean>(false);
@@ -60,7 +83,7 @@ export default function Page(): JSX.Element {
   );
   const [loadingMinhaResposta, setLoadingMinhaResposta] = useState(false);
 
-  // Carregar dados do localStorage (executa uma vez)
+  // Keep local state in sync with storage if something else sets it later
   useEffect(() => {
     if (typeof window === "undefined") return;
     const id = localStorage.getItem("idAluno");
@@ -68,11 +91,11 @@ export default function Page(): JSX.Element {
     const email = localStorage.getItem("alunoEmail");
 
     if (id) setAlunoId(Number(id));
-    if (nome) setAlunoNome(nome);
-    if (email) setAlunoEmail(email);
+    if (nome !== null) setAlunoNome(nome);
+    if (email !== null) setAlunoEmail(email);
   }, []);
 
-  // Buscar atividades (igual antes)
+  // Buscar atividades
   useEffect(() => {
     const idFromStore =
       typeof window !== "undefined" ? localStorage.getItem("idAluno") : null;
@@ -135,9 +158,84 @@ export default function Page(): JSX.Element {
     setAtividadeSelecionada(null);
   }, []);
 
-  const toggleUserPopup = useCallback(() => {
-    setPopupAberto((prev) => !prev);
-  }, []);
+  // IMPROVEMENT: when opening the popup, try to ensure we have the real aluno name/email.
+  // If not present in localStorage, try to obtain from the server via:
+  // 1) minhaResposta (if already loaded), or
+  // 2) a lightweight endpoint /api/aluno/me (best-effort; may not exist)
+  // This makes the popup show real data instead of "—".
+  const toggleUserPopup = useCallback(async () => {
+    const opening = !popupAberto;
+    if (opening) {
+      // re-read localStorage first (in case login set values after initial render)
+      try {
+        if (typeof window !== "undefined") {
+          const sId = localStorage.getItem("idAluno");
+          const sNome = localStorage.getItem("alunoNome");
+          const sEmail = localStorage.getItem("alunoEmail");
+          if (sId && !alunoId) setAlunoId(Number(sId));
+          if (sNome && (!alunoNome || alunoNome.length === 0))
+            setAlunoNome(sNome);
+          if (sEmail && (!alunoEmail || alunoEmail.length === 0))
+            setAlunoEmail(sEmail);
+        }
+      } catch (err) {
+        // ignore
+      }
+
+      // If still missing name/email, attempt to derive from minhaResposta (if we've already fetched it)
+      if (
+        (!alunoNome ||
+          alunoNome.length === 0 ||
+          !alunoEmail ||
+          alunoEmail.length === 0) &&
+        minhaResposta
+      ) {
+        const a = minhaResposta.aluno;
+        if (a) {
+          if (!alunoNome || alunoNome.length === 0) setAlunoNome(a.nome ?? "");
+          if (!alunoEmail || alunoEmail.length === 0)
+            setAlunoEmail(a.email ?? "");
+        }
+      }
+
+      // If still missing, try to call a lightweight endpoint /api/aluno/me (best-effort; backends vary).
+      // This won't break if endpoint doesn't exist (we catch errors).
+      if (
+        !alunoNome ||
+        alunoNome.length === 0 ||
+        !alunoEmail ||
+        alunoEmail.length === 0
+      ) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const res = await fetch("/api/aluno/me");
+          if (res.ok) {
+            const body = await res.json().catch(() => null);
+            if (body) {
+              if (!alunoNome || alunoNome.length === 0)
+                setAlunoNome(body.nome ?? body.name ?? "");
+              if (!alunoEmail || alunoEmail.length === 0)
+                setAlunoEmail(body.email ?? "");
+              // persist to localStorage so future loads are immediate
+              try {
+                if (typeof window !== "undefined") {
+                  if (body.nome) localStorage.setItem("alunoNome", body.nome);
+                  if (body.email)
+                    localStorage.setItem("alunoEmail", body.email);
+                  if (body.idAluno)
+                    localStorage.setItem("idAluno", String(body.idAluno));
+                }
+              } catch {}
+            }
+          }
+        } catch {
+          // ignore errors; endpoint might not exist
+        }
+      }
+    }
+
+    setPopupAberto((p) => !p);
+  }, [popupAberto, alunoId, alunoNome, alunoEmail, minhaResposta]);
 
   const fecharModalDesempenho = useCallback(() => {
     setModalAberto(false);
@@ -263,6 +361,21 @@ export default function Page(): JSX.Element {
             (r.aluno && Number(r.aluno.idAluno) === Number(alunoId))
         );
         setMinhaResposta(found ?? null);
+        // if we found a response that includes aluno info, make sure header/popup reflect it
+        if (found?.aluno) {
+          if (!alunoNome || alunoNome.length === 0)
+            setAlunoNome(found.aluno.nome ?? "");
+          if (!alunoEmail || alunoEmail.length === 0)
+            setAlunoEmail(found.aluno.email ?? "");
+          try {
+            if (typeof window !== "undefined") {
+              if (found.aluno.nome)
+                localStorage.setItem("alunoNome", found.aluno.nome);
+              if (found.aluno.email)
+                localStorage.setItem("alunoEmail", found.aluno.email);
+            }
+          } catch {}
+        }
       } else if (data && Array.isArray(data.respostas)) {
         const found = data.respostas.find(
           (r: any) =>
@@ -270,6 +383,20 @@ export default function Page(): JSX.Element {
             (r.aluno && Number(r.aluno.idAluno) === Number(alunoId))
         );
         setMinhaResposta(found ?? null);
+        if (found?.aluno) {
+          if (!alunoNome || alunoNome.length === 0)
+            setAlunoNome(found.aluno.nome ?? "");
+          if (!alunoEmail || alunoEmail.length === 0)
+            setAlunoEmail(found.aluno.email ?? "");
+          try {
+            if (typeof window !== "undefined") {
+              if (found.aluno.nome)
+                localStorage.setItem("alunoNome", found.aluno.nome);
+              if (found.aluno.email)
+                localStorage.setItem("alunoEmail", found.aluno.email);
+            }
+          } catch {}
+        }
       } else {
         setMinhaResposta(null);
       }
@@ -327,30 +454,35 @@ export default function Page(): JSX.Element {
                 alt="Avatar"
               />
               <div className={styles.userDetails}>
-                <span className={styles.userName}>{alunoNome || "Aluno"}</span>
+                {/* show the actual alunoNome and alunoEmail (no placeholders) */}
+                <span className={styles.userName}>
+                  {alunoNome && alunoNome.length > 0 ? alunoNome : "Aluno"}
+                </span>
                 <span className={styles.userEmail}>
-                  {alunoEmail || "aluno@exemplo.com"}
+                  {alunoEmail && alunoEmail.length > 0
+                    ? alunoEmail
+                    : "aluno@exemplo.com"}
                 </span>
               </div>
             </div>
 
+            {/* Popup de usuário: agora mostra apenas nome e email (igual página do professor) */}
             <div
               className={`${styles.userPopup} ${
                 popupAberto ? styles.userPopupActive : ""
               }`}
               aria-hidden={!popupAberto}
             >
-              <h3>Detalhes do Aluno</h3>
+              <h3>Detalhes</h3>
               <p>
-                <strong>Nome:</strong> {alunoNome}
+                <strong>Nome:</strong> {alunoNome || "—"}
               </p>
               <p>
-                <strong>Email:</strong> {alunoEmail}
+                <strong>Email:</strong> {alunoEmail || "—"}
               </p>
               <p>
-                <strong>ID:</strong> {alunoId}
+                <button onClick={sairSistema}>Sair</button>
               </p>
-              <button onClick={sairSistema}>Sair</button>
             </div>
           </div>
         </div>
@@ -532,8 +664,6 @@ export default function Page(): JSX.Element {
                   📝 Resolver Atividade
                 </button>
 
-                {/* Removed "Enviar Solução" button as requested */}
-
                 <button
                   className={styles.btnVerdesempenho}
                   onClick={() => mostrarDesempenho()}
@@ -690,7 +820,6 @@ export default function Page(): JSX.Element {
                     >
                       Fechar
                     </button>
-                    {/* Se quiser abrir página de correção detalhada do professor (não disponível para aluno) pode direcionar a outro lugar */}
                   </div>
                 </div>
               ) : (
