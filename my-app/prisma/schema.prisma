@@ -84,6 +84,9 @@ model Atividade {
 
   arquivos AtividadeArquivo[]
 
+  isStatic     Boolean  @default(false)
+  source       String?  // ex: "builtin", "admin", "import"
+
   script    String? // código-fonte (AssemblyScript) colado pelo admin
   linguagem String? // e.g. "assemblyscript"
   wasmUrl   String? // URL relativo para .wasm gerado ou carregado
@@ -149,5 +152,17 @@ model AtividadeProfessor {
   @@unique([idAtividade, idProfessor])
   @@index([idAtividade])
   @@index([idProfessor])
+}
+
+model RealizacaoPlugged {
+  id             Int      @id @default(autoincrement())
+  idAtividade    Int
+  idAluno        Int?
+  idTurma        Int?
+  seed           Int
+  correctValue   Int
+  selectedValue  Int?
+  notaObtida     Int?
+  dataAplicacao  DateTime @default(now())
 }
 

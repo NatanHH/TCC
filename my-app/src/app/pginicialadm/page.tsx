@@ -45,20 +45,13 @@ export default function PainelAdm() {
   const [formAtividade, setFormAtividade] = useState({
     titulo: "",
     descricao: "",
-    tipo: "PLUGGED",
+    tipo: "UNPLUGGED",
     nota: 10,
     script: "",
     linguagem: "assemblyscript",
   });
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [arquivosPreviews, setArquivosPreviews] = useState<string[]>([]);
-
-  // Alternativas PLUGGED
-  const [alternativas, setAlternativas] = useState<Alt[]>([
-    { texto: "" },
-    { texto: "" },
-  ]);
-  const [correctIndex, setCorrectIndex] = useState<number | null>(null);
 
   // Edit mode for Activities
   const [editingAtividadeId, setEditingAtividadeId] = useState<number | null>(
@@ -284,49 +277,17 @@ export default function PainelAdm() {
     }
   }
 
-  // Alternativas handlers
-  function addAlternativa() {
-    setAlternativas((p) => [...p, { texto: "" }]);
-  }
-  function removeAlternativa(index: number) {
-    setAlternativas((p) => p.filter((_, i) => i !== index));
-    setCorrectIndex((prev) =>
-      prev === index ? null : prev !== null && prev > index ? prev - 1 : prev
-    );
-  }
-  function updateAlternativaText(index: number, texto: string) {
-    setAlternativas((p) =>
-      p.map((a, i) => (i === index ? { ...a, texto } : a))
-    );
-  }
-  function setCorrectAlternative(index: number) {
-    setCorrectIndex(index);
-  }
-
   // Start editing an existing activity - populates form with data
   function startEditAtividade(atividade: any) {
     setEditingAtividadeId(atividade.idAtividade);
     setFormAtividade({
       titulo: atividade.titulo || "",
       descricao: atividade.descricao || "",
-      tipo: atividade.tipo || "PLUGGED",
+      tipo: atividade.tipo || "UNPLUGGED",
       nota: atividade.nota ?? 10,
       script: atividade.script ?? "",
       linguagem: atividade.linguagem ?? "assemblyscript",
     });
-    if (
-      Array.isArray(atividade.alternativas) &&
-      atividade.alternativas.length > 0
-    ) {
-      setAlternativas(
-        atividade.alternativas.map((a: any) => ({ texto: a.texto ?? "" }))
-      );
-      const idx = atividade.alternativas.findIndex((a: any) => !!a.correta);
-      setCorrectIndex(idx >= 0 ? idx : null);
-    } else {
-      setAlternativas([{ texto: "" }, { texto: "" }]);
-      setCorrectIndex(null);
-    }
     // set previews for existing arquivos (URLs)
     const previews = (atividade.arquivos || []).map((f: any) => f.url);
     setArquivosPreviews(previews);
@@ -386,18 +347,7 @@ export default function PainelAdm() {
   ) {
     e.preventDefault();
 
-    // validations for PLUGGED
-    if (formAtividade.tipo === "PLUGGED") {
-      const filled = alternativas.map((a) => a.texto?.trim()).filter(Boolean);
-      if (filled.length === 0) {
-        alert("Adicione pelo menos uma alternativa para atividades PLUGGED.");
-        return;
-      }
-      if (correctIndex === null || !alternativas[correctIndex]?.texto?.trim()) {
-        alert("Marque qual alternativa é a correta.");
-        return;
-      }
-    }
+    // apenas UNPLUGGED suportado — sem validações de alternativas
 
     // payload for JSON operations
     const payload: any = {
@@ -408,12 +358,6 @@ export default function PainelAdm() {
       script: formAtividade.script || null,
       linguagem: formAtividade.linguagem || null,
     };
-
-    if (formAtividade.tipo === "PLUGGED") {
-      payload.alternativas = alternativas
-        .map((a, i) => ({ texto: a.texto || "", correta: i === correctIndex }))
-        .filter((a) => a.texto.trim() !== "");
-    }
 
     try {
       if (editingAtividadeId) {
@@ -511,7 +455,7 @@ export default function PainelAdm() {
       setFormAtividade({
         titulo: "",
         descricao: "",
-        tipo: "PLUGGED",
+        tipo: "UNPLUGGED",
         nota: 10,
         script: "",
         linguagem: "assemblyscript",
@@ -523,8 +467,6 @@ export default function PainelAdm() {
       });
       setArquivos([]);
       setArquivosPreviews([]);
-      setAlternativas([{ texto: "" }, { texto: "" }]);
-      setCorrectIndex(null);
       fetchAtividades();
     } catch (err) {
       console.error("Erro no submit atividade:", err);
@@ -898,140 +840,60 @@ export default function PainelAdm() {
                 className={styles.input}
               />
 
-              {formAtividade.tipo === "PLUGGED" && (
-                <>
-                  <label style={{ color: "#fff", fontWeight: 600 }}>
-                    Alternativas
-                  </label>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                  >
-                    {alternativas.map((alt, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="correctAlt"
-                          checked={correctIndex === idx}
-                          onChange={() => setCorrectAlternative(idx)}
-                          aria-label={`Marcar alternativa ${
-                            idx + 1
-                          } como correta`}
-                        />
-                        <input
-                          type="text"
-                          placeholder={`Alternativa ${idx + 1}`}
-                          value={alt.texto}
-                          onChange={(e) =>
-                            updateAlternativaText(idx, e.target.value)
-                          }
-                          className={styles.input}
-                          style={{ flex: 1 }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeAlternativa(idx)}
-                          style={{
-                            background: "#b71c1c",
-                            color: "#fff",
-                            border: "none",
-                            padding: "6px 8px",
-                            borderRadius: 6,
-                          }}
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    ))}
-                    <div>
-                      <button
-                        type="button"
-                        onClick={addAlternativa}
-                        className={styles.btn}
-                        style={{ background: "#448aff", color: "#fff" }}
-                      >
-                        Adicionar Alternativa
-                      </button>
-                    </div>
-                  </div>
+              {/* Campos específicos de atividades PLUGGED removidos */}
 
-                  <textarea
-                    name="script"
-                    placeholder="Script da atividade (código) — opcional"
-                    value={formAtividade.script}
-                    onChange={handleFormAtividadeChange}
-                    className={styles.input}
-                    style={{ marginTop: 8 }}
-                  />
+              {/* campos UNPLUGGED (upload) */}
+              <>
+                <label>
+                  Anexar arquivos (imagens ou PDFs):
                   <input
-                    name="linguagem"
-                    type="text"
-                    placeholder="Linguagem (ex: assemblyscript) — opcional"
-                    value={formAtividade.linguagem}
-                    onChange={handleFormAtividadeChange}
+                    type="file"
+                    name="arquivos"
+                    multiple
+                    accept="image/*,application/pdf"
+                    onChange={handleArquivosChange}
                     className={styles.input}
                   />
-                </>
-              )}
-
-              {formAtividade.tipo === "UNPLUGGED" && (
-                <>
-                  <label>
-                    Anexar arquivos (imagens ou PDFs):
-                    <input
-                      type="file"
-                      name="arquivos"
-                      multiple
-                      accept="image/*,application/pdf"
-                      onChange={handleArquivosChange}
-                      className={styles.input}
-                    />
-                  </label>
-                  {arquivos.length > 0 && (
+                </label>
+                {arquivos.length > 0 && (
+                  <ul>
+                    {arquivos.map((file, idx) => (
+                      <li key={idx}>{file.name}</li>
+                    ))}
+                  </ul>
+                )}
+                {/* show previews of existing files when editing */}
+                {arquivosPreviews.length > 0 && (
+                  <div>
+                    <strong>Previews / arquivos existentes:</strong>
                     <ul>
-                      {arquivos.map((file, idx) => (
-                        <li key={idx}>{file.name}</li>
+                      {arquivosPreviews.map((p, i) => (
+                        <li key={i}>
+                          <a href={p} target="_blank" rel="noreferrer">
+                            {p}
+                          </a>
+                        </li>
                       ))}
                     </ul>
-                  )}
-                  {/* show previews of existing files when editing */}
-                  {arquivosPreviews.length > 0 && (
-                    <div>
-                      <strong>Previews / arquivos existentes:</strong>
-                      <ul>
-                        {arquivosPreviews.map((p, i) => (
-                          <li key={i}>
-                            <a href={p} target="_blank" rel="noreferrer">
-                              {p}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {/* replace-files checkbox only visible when editing */}
-                  {editingAtividadeId && (
-                    <div style={{ marginTop: 8 }}>
-                      <label style={{ color: "#fff" }}>
-                        <input
-                          type="checkbox"
-                          checked={replaceFilesOnUpdate}
-                          onChange={(e) =>
-                            setReplaceFilesOnUpdate(e.target.checked)
-                          }
-                        />{" "}
-                        Substituir arquivos existentes ao salvar
-                      </label>
-                    </div>
-                  )}
-                </>
-              )}
+                  </div>
+                )}
+                {/* replace-files checkbox only visible when editing */}
+                {editingAtividadeId && (
+                  <div style={{ marginTop: 8 }}>
+                    <label style={{ color: "#fff" }}>
+                      <input
+                        type="checkbox"
+                        checked={replaceFilesOnUpdate}
+                        onChange={(e) =>
+                          setReplaceFilesOnUpdate(e.target.checked)
+                        }
+                      />{" "}
+                      Substituir arquivos existentes ao salvar
+                    </label>
+                  </div>
+                )}
+              </>
+              {/* fim campos UNPLUGGED */}
 
               <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                 <button
@@ -1050,7 +912,7 @@ export default function PainelAdm() {
                     setFormAtividade({
                       titulo: "",
                       descricao: "",
-                      tipo: "PLUGGED",
+                      tipo: "UNPLUGGED",
                       nota: 10,
                       script: "",
                       linguagem: "assemblyscript",
@@ -1062,8 +924,6 @@ export default function PainelAdm() {
                       } catch {}
                     });
                     setArquivosPreviews([]);
-                    setAlternativas([{ texto: "" }, { texto: "" }]);
-                    setCorrectIndex(null);
                   }}
                 >
                   Cancelar

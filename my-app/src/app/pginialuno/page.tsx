@@ -2,6 +2,21 @@
 import React, { JSX, useEffect, useState, useCallback } from "react";
 import styles from "./page.module.css";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+import ClientOnlyText from "../../components/ClientOnlyText";
+
+// Dynamically load the plugged MCQ component (client-only)
+type PluggedContagemMCQProps = {
+  fetchEndpoint?: string;
+  saveEndpoint?: string;
+  alunoId?: number | null;
+  initialLoad?: boolean;
+  autoSave?: boolean;
+};
+const PluggedContagemMCQ = dynamic<PluggedContagemMCQProps>(
+  () => import("../../components/PluggedContagemMCQ").then((m) => m.default),
+  { ssr: false }
+);
 
 type ArquivoResumo = {
   idArquivo: number;
@@ -158,15 +173,9 @@ export default function Page(): JSX.Element {
     setAtividadeSelecionada(null);
   }, []);
 
-  // IMPROVEMENT: when opening the popup, try to ensure we have the real aluno name/email.
-  // If not present in localStorage, try to obtain from the server via:
-  // 1) minhaResposta (if already loaded), or
-  // 2) a lightweight endpoint /api/aluno/me (best-effort; may not exist)
-  // This makes the popup show real data instead of "—".
   const toggleUserPopup = useCallback(async () => {
     const opening = !popupAberto;
     if (opening) {
-      // re-read localStorage first (in case login set values after initial render)
       try {
         if (typeof window !== "undefined") {
           const sId = localStorage.getItem("idAluno");
@@ -182,7 +191,6 @@ export default function Page(): JSX.Element {
         // ignore
       }
 
-      // If still missing name/email, attempt to derive from minhaResposta (if we've already fetched it)
       if (
         (!alunoNome ||
           alunoNome.length === 0 ||
@@ -198,8 +206,6 @@ export default function Page(): JSX.Element {
         }
       }
 
-      // If still missing, try to call a lightweight endpoint /api/aluno/me (best-effort; backends vary).
-      // This won't break if endpoint doesn't exist (we catch errors).
       if (
         !alunoNome ||
         alunoNome.length === 0 ||
@@ -207,7 +213,6 @@ export default function Page(): JSX.Element {
         alunoEmail.length === 0
       ) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const res = await fetch("/api/aluno/me");
           if (res.ok) {
             const body = await res.json().catch(() => null);
@@ -216,7 +221,6 @@ export default function Page(): JSX.Element {
                 setAlunoNome(body.nome ?? body.name ?? "");
               if (!alunoEmail || alunoEmail.length === 0)
                 setAlunoEmail(body.email ?? "");
-              // persist to localStorage so future loads are immediate
               try {
                 if (typeof window !== "undefined") {
                   if (body.nome) localStorage.setItem("alunoNome", body.nome);
@@ -281,7 +285,6 @@ export default function Page(): JSX.Element {
         respostaTexto: respostaTexto ?? "",
       };
 
-      // agora enviamos JSON (sem anexos)
       const res = await fetch("/api/respostas/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -295,7 +298,6 @@ export default function Page(): JSX.Element {
         );
       }
       alert("Resposta enviada com sucesso!");
-      // opcional: atualizar lista (re-fetch)
       const id = alunoId;
       const q = encodeURIComponent(String(id));
       fetch(`/api/listaratividades?alunoId=${q}`).then(async (r) => {
@@ -318,7 +320,6 @@ export default function Page(): JSX.Element {
     }
   }
 
-  // formato de datas
   const formatarData = useCallback((dataString?: string | null) => {
     if (!dataString) return "";
     try {
@@ -337,7 +338,6 @@ export default function Page(): JSX.Element {
     }
   }
 
-  // --- NOVO: buscar a resposta (minha) para a atividade selecionada e mostrar feedback ---
   async function fetchMinhaRespostaParaAtividade(atividadeId?: number) {
     if (!atividadeId || !alunoId) {
       setMinhaResposta(null);
@@ -361,7 +361,6 @@ export default function Page(): JSX.Element {
             (r.aluno && Number(r.aluno.idAluno) === Number(alunoId))
         );
         setMinhaResposta(found ?? null);
-        // if we found a response that includes aluno info, make sure header/popup reflect it
         if (found?.aluno) {
           if (!alunoNome || alunoNome.length === 0)
             setAlunoNome(found.aluno.nome ?? "");
@@ -408,9 +407,7 @@ export default function Page(): JSX.Element {
     }
   }
 
-  // Quando o aluno clica em "Ver Meu Desempenho", buscamos a resposta individual e abrimos o modal
   async function mostrarDesempenho() {
-    // ensure there's a selected activity
     if (!atividadeSelecionada) {
       alert("Selecione uma atividade antes de ver o desempenho.");
       return;
@@ -454,19 +451,34 @@ export default function Page(): JSX.Element {
                 alt="Avatar"
               />
               <div className={styles.userDetails}>
-                {/* show the actual alunoNome and alunoEmail (no placeholders) */}
                 <span className={styles.userName}>
-                  {alunoNome && alunoNome.length > 0 ? alunoNome : "Aluno"}
+                  <ClientOnlyText
+                    getText={() =>
+                      alunoNome && alunoNome.length > 0
+                        ? alunoNome
+                        : typeof window !== "undefined"
+                        ? localStorage.getItem("alunoNome") ?? "Aluno"
+                        : "Aluno"
+                    }
+                    fallback="Aluno"
+                  />
                 </span>
                 <span className={styles.userEmail}>
-                  {alunoEmail && alunoEmail.length > 0
-                    ? alunoEmail
-                    : "aluno@exemplo.com"}
+                  <ClientOnlyText
+                    getText={() =>
+                      alunoEmail && alunoEmail.length > 0
+                        ? alunoEmail
+                        : typeof window !== "undefined"
+                        ? localStorage.getItem("alunoEmail") ??
+                          "aluno@exemplo.com"
+                        : "aluno@exemplo.com"
+                    }
+                    fallback="aluno@exemplo.com"
+                  />
                 </span>
               </div>
             </div>
-
-            {/* Popup de usuário: agora mostra apenas nome e email (igual página do professor) */}
+            {/* user popup content uses client-only reads as well */}
             <div
               className={`${styles.userPopup} ${
                 popupAberto ? styles.userPopupActive : ""
@@ -475,10 +487,28 @@ export default function Page(): JSX.Element {
             >
               <h3>Detalhes</h3>
               <p>
-                <strong>Nome:</strong> {alunoNome || "—"}
+                <strong>Nome:</strong>{" "}
+                <ClientOnlyText
+                  getText={() =>
+                    (typeof window !== "undefined"
+                      ? localStorage.getItem("alunoNome")
+                      : null) ??
+                    (alunoNome && alunoNome.length > 0 ? alunoNome : "—")
+                  }
+                  fallback="—"
+                />
               </p>
               <p>
-                <strong>Email:</strong> {alunoEmail || "—"}
+                <strong>Email:</strong>{" "}
+                <ClientOnlyText
+                  getText={() =>
+                    (typeof window !== "undefined"
+                      ? localStorage.getItem("alunoEmail")
+                      : null) ??
+                    (alunoEmail && alunoEmail.length > 0 ? alunoEmail : "—")
+                  }
+                  fallback="—"
+                />
               </p>
               <p>
                 <button onClick={sairSistema}>Sair</button>
@@ -604,76 +634,105 @@ export default function Page(): JSX.Element {
                 {atividadeSelecionada.descricao || "Sem descrição disponível."}
               </p>
 
-              {/* Arquivos/Anexos */}
-              {atividadeSelecionada.arquivos &&
-              atividadeSelecionada.arquivos.length > 0 ? (
-                <div style={{ marginTop: 20, marginBottom: 20 }}>
-                  <h3 style={{ color: "#dcd7ee", marginBottom: 12 }}>
-                    📎 Arquivos da Atividade (
-                    {atividadeSelecionada.arquivos.length})
-                  </h3>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                  >
-                    {atividadeSelecionada.arquivos.map((arquivo) => (
-                      <div
-                        key={arquivo.idArquivo}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: 12,
-                          background: "#3a2b4f",
-                          borderRadius: 8,
-                          border: "1px solid #555",
-                        }}
-                      >
-                        <div style={{ color: "#fff" }}>
-                          <div style={{ fontWeight: "bold" }}>
-                            {arquivo.nomeArquivo ||
-                              arquivo.url.split("/").pop()}
-                          </div>
-                          <div style={{ fontSize: "0.8em", color: "#bbb" }}>
-                            {arquivo.tipoArquivo || "Arquivo"}
-                          </div>
-                        </div>
-                        <button
-                          className={styles.btnAplicar}
-                          onClick={() => abrirAnexo(arquivo.idArquivo)}
-                          aria-label={`Abrir anexo ${
-                            arquivo.nomeArquivo || arquivo.idArquivo
-                          }`}
-                        >
-                          📥 Abrir / Baixar
-                        </button>
-                      </div>
-                    ))}
+              {/* If the applied activity is a PLUGGED type, render the interactive plugged component */}
+              {atividadeSelecionada.tipo === "PLUGGED" ? (
+                <div style={{ marginTop: 12 }}>
+                  <PluggedContagemMCQ
+                    fetchEndpoint={`/api/atividades/plugged/contagem-instance?turmaId=${
+                      atividadeSelecionada.turma?.idTurma ?? ""
+                    }`}
+                    saveEndpoint="/api/respostas/plugged"
+                    alunoId={alunoId}
+                    initialLoad={true}
+                    autoSave={true}
+                  />
+                  <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
+                    <button className={styles.btn} onClick={voltarParaLista}>
+                      ← Voltar para Lista
+                    </button>
                   </div>
                 </div>
               ) : (
-                <div style={{ color: "#bdbdda", marginTop: 8 }}>
-                  Nenhum anexo disponível para esta atividade.
-                </div>
+                <>
+                  {/* Arquivos/Anexos */}
+                  {atividadeSelecionada.arquivos &&
+                  atividadeSelecionada.arquivos.length > 0 ? (
+                    <div style={{ marginTop: 20, marginBottom: 20 }}>
+                      <h3 style={{ color: "#dcd7ee", marginBottom: 12 }}>
+                        📎 Arquivos da Atividade (
+                        {atividadeSelecionada.arquivos.length})
+                      </h3>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
+                        {atividadeSelecionada.arquivos.map((arquivo) => (
+                          <div
+                            key={arquivo.idArquivo}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: 12,
+                              background: "#3a2b4f",
+                              borderRadius: 8,
+                              border: "1px solid #555",
+                            }}
+                          >
+                            <div style={{ color: "#fff" }}>
+                              <div style={{ fontWeight: "bold" }}>
+                                {arquivo.nomeArquivo ||
+                                  arquivo.url.split("/").pop()}
+                              </div>
+                              <div style={{ fontSize: "0.8em", color: "#bbb" }}>
+                                {arquivo.tipoArquivo || "Arquivo"}
+                              </div>
+                            </div>
+                            <button
+                              className={styles.btnAplicar}
+                              onClick={() => abrirAnexo(arquivo.idArquivo)}
+                              aria-label={`Abrir anexo ${
+                                arquivo.nomeArquivo || arquivo.idArquivo
+                              }`}
+                            >
+                              📥 Abrir / Baixar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: "#bdbdda", marginTop: 8 }}>
+                      Nenhum anexo disponível para esta atividade.
+                    </div>
+                  )}
+
+                  <div
+                    className={styles.botoesAtividade}
+                    style={{ marginTop: 30 }}
+                  >
+                    <button
+                      className={styles.btnFormulario}
+                      onClick={() => abrirResolver(atividadeSelecionada)}
+                    >
+                      📝 Resolver Atividade
+                    </button>
+
+                    <button
+                      className={styles.btnVerdesempenho}
+                      onClick={() => mostrarDesempenho()}
+                    >
+                      📊 Ver Meu Desempenho
+                    </button>
+                    <button className={styles.btn} onClick={voltarParaLista}>
+                      ← Voltar para Lista
+                    </button>
+                  </div>
+                </>
               )}
-
-              <div className={styles.botoesAtividade} style={{ marginTop: 30 }}>
-                <button
-                  className={styles.btnFormulario}
-                  onClick={() => abrirResolver(atividadeSelecionada)}
-                >
-                  📝 Resolver Atividade
-                </button>
-
-                <button
-                  className={styles.btnVerdesempenho}
-                  onClick={() => mostrarDesempenho()}
-                >
-                  📊 Ver Meu Desempenho
-                </button>
-                <button className={styles.btn} onClick={voltarParaLista}>
-                  ← Voltar para Lista
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -694,10 +753,28 @@ export default function Page(): JSX.Element {
               </h2>
               <div style={{ marginTop: 8, color: "#bdbdda" }}>
                 <div>
-                  <strong>Aluno:</strong> {alunoNome || "—"}
+                  <strong>Aluno:</strong>{" "}
+                  <ClientOnlyText
+                    getText={() =>
+                      (typeof window !== "undefined"
+                        ? localStorage.getItem("alunoNome")
+                        : null) ??
+                      (alunoNome && alunoNome.length > 0 ? alunoNome : "—")
+                    }
+                    fallback="—"
+                  />
                 </div>
                 <div>
-                  <strong>Email:</strong> {alunoEmail || "—"}
+                  <strong>Email:</strong>{" "}
+                  <ClientOnlyText
+                    getText={() =>
+                      (typeof window !== "undefined"
+                        ? localStorage.getItem("alunoEmail")
+                        : null) ??
+                      (alunoEmail && alunoEmail.length > 0 ? alunoEmail : "—")
+                    }
+                    fallback="—"
+                  />
                 </div>
               </div>
 
@@ -804,7 +881,6 @@ export default function Page(): JSX.Element {
                     </div>
                   </div>
 
-                  {/* Opcional: botões rápidos */}
                   <div
                     style={{
                       display: "flex",
