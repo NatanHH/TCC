@@ -12,6 +12,8 @@ type PluggedContagemMCQProps = {
   saveEndpoint: string;
   alunoId?: number | null;
   initialLoad?: boolean;
+  atividadeId?: number;
+  turmaId?: number | null;
 };
 // Use the props generic so Next's dynamic loader signature aligns with the component props
 const PluggedContagemMCQ = dynamic<PluggedContagemMCQProps>(
@@ -65,6 +67,15 @@ export default function PageProfessor() {
   // keep atividadeDetalhe for compatibility with modals that reference it
   const [atividadeDetalhe, setAtividadeDetalhe] = useState<Atividade | null>(
     null
+  );
+  // atividade selecionada dentro do modal de desempenho (padrão = a atividade clicada)
+  const [modalSelectedAtividadeId, setModalSelectedAtividadeId] = useState<
+    number | null
+  >(null);
+
+  // controla se o modal de desempenho renderiza o modo "plugged" (com componente) ou "unplugged" (lista de respostas)
+  const [desempenhoView, setDesempenhoView] = useState<"plugged" | "unplugged">(
+    "unplugged"
   );
 
   const [atividades, setAtividades] = useState<Atividade[]>([]);
@@ -488,6 +499,67 @@ export default function PageProfessor() {
     }
   }
 
+  // Helper: extrai um id de atividade confiável de várias formas de objeto
+  function getAtividadeIdFrom(obj: any): number | null {
+    if (!obj) return null;
+    const cand =
+      obj.idAtividade ?? obj.idAtividadeTurma ?? obj.atividade?.idAtividade;
+    if (cand == null || cand === "") return null;
+    const n = Number(cand);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Abre modal de desempenho garantindo id/objeto normalizado
+  async function mostrarDesempenhoParaAtividadeAplicada(
+    atividade: Atividade | any
+  ) {
+    // exige seleção de turma em contexto de visualização por turma
+    if (!turmaSelecionada) {
+      alert("Selecione uma turma primeiro.");
+      return;
+    }
+
+    const id = getAtividadeIdFrom(atividade);
+    if (!id) {
+      alert("Não foi possível identificar a atividade para ver o desempenho.");
+      return;
+    }
+
+    const normalized: Atividade = {
+      idAtividade: id,
+      titulo:
+        atividade.titulo ?? atividade.atividade?.titulo ?? `Atividade ${id}`,
+      descricao: atividade.descricao ?? atividade.atividade?.descricao ?? "",
+      tipo: atividade.tipo ?? atividade.atividade?.tipo,
+      arquivos: atividade.arquivos ?? atividade.atividade?.arquivos ?? [],
+    };
+
+    // normaliza e abre modal — primeiro busca as respostas para já ter os dados
+    setExpandedAtividadeId(normalized.idAtividade);
+    setAtividadeDetalhe(normalized);
+    setModalSelectedAtividadeId(normalized.idAtividade);
+
+    // escolhe modo de visualização conforme tipo da atividade
+    const mode =
+      (normalized.tipo ?? "").toUpperCase() === "PLUGGED"
+        ? "plugged"
+        : "unplugged";
+    setDesempenhoView(mode as any);
+
+    // carrega respostas antes de abrir (para a UI unplugged mostrar a lista)
+    try {
+      await fetchRespostasParaAtividade(
+        normalized.idAtividade,
+        turmaSelecionada.idTurma
+      );
+    } catch (err) {
+      console.error("Erro ao pré-carregar respostas:", err);
+      // continua mesmo em erro
+    }
+
+    setModalDesempenhoAberto(true);
+  }
+
   // --- NOVO: buscar respostas para a atividade aplicada na turma selecionada (preservado) ---
   const fetchRespostasParaAtividade = useCallback(
     async (idAtividade: number, idTurma?: number) => {
@@ -512,37 +584,137 @@ export default function PageProfessor() {
         console.error("Erro ao buscar respostas:", err);
         setRespostas([]);
       } finally {
+        // garante que o indicador de loading seja sempre desligado
         setLoadingRespostas(false);
       }
     },
     []
   );
 
-  async function mostrarDesempenhoParaAtividadeAplicada(atividade: Atividade) {
-    if (!turmaSelecionada) {
-      alert("Selecione uma turma primeiro.");
+  // abre o detalhe da resposta buscando a versão mais recente do servidor
+  async function abrirRespostaDetalhe(r: RespostaResumo) {
+    try {
+      // tentativa direta por id (algumas APIs não permitem GET /api/respostas/:id -> 405)
+      const res = await fetch(
+        `/api/respostas/${encodeURIComponent(String(r.idResposta))}`
+      );
+      if (res.status === 405) throw new Error("MethodNotAllowed");
+      const data = await res.json().catch(() => null);
+      const latest: RespostaResumo = res.ok ? data?.resposta ?? data ?? r : r;
+      setRespostaDetalhe(latest);
       return;
+    } catch (err) {
+      console.warn(
+        "abrirRespostaDetalhe: fetch by id failed, falling back:",
+        err
+      );
+      // fallback: buscar pela lista de respostas da atividade/turma e encontrar pelo id
+      try {
+        const atividadeId =
+          modalSelectedAtividadeId ?? atividadeDetalhe?.idAtividade ?? null;
+        const turmaQuery = turmaSelecionada
+          ? `&turmaId=${encodeURIComponent(String(turmaSelecionada.idTurma))}`
+          : "";
+        if (atividadeId) {
+          const listRes = await fetch(
+            `/api/respostas?atividadeId=${encodeURIComponent(
+              String(atividadeId)
+            )}${turmaQuery}`
+          );
+          const listData = await listRes.json().catch(() => null);
+          let arr: any[] = [];
+          if (listRes.ok && Array.isArray(listData)) arr = listData;
+          else if (listRes.ok && listData && Array.isArray(listData.respostas))
+            arr = listData.respostas;
+          const found = arr.find(
+            (x) => Number(x.idResposta) === Number(r.idResposta)
+          );
+          if (found) {
+            setRespostaDetalhe(found as RespostaResumo);
+            return;
+          }
+        }
+      } catch (err2) {
+        console.error("abrirRespostaDetalhe fallback error:", err2);
+      }
+      // último recurso: mostrar o objeto recebido inicialmente
+      setRespostaDetalhe(r);
     }
-    // keep inline expanded for context
-    setExpandedAtividadeId(atividade.idAtividade);
-    setAtividadeDetalhe(atividade);
-    // o componente DesempenhoAlunos fará as requisições necessárias
-    setModalDesempenhoAberto(true);
-  }
-
-  function abrirRespostaDetalhe(r: RespostaResumo) {
-    setRespostaDetalhe(r);
   }
   function fecharRespostaDetalhe() {
     setRespostaDetalhe(null);
   }
 
   // --- NOVO: correção inline (modal) ---
-  function abrirModalCorrecao(resposta: RespostaResumo) {
-    setRespostaParaCorrigir(resposta);
-    setNotaCorrecao(resposta.notaObtida ?? "");
-    setFeedbackCorrecao(resposta.feedback ?? "");
-    setCorrecaoModalAberto(true);
+  async function abrirModalCorrecao(resposta: RespostaResumo) {
+    setIsSubmittingCorrecao(false);
+    setCorrecaoModalAberto(false);
+    try {
+      // tenta fetch direto por id (algumas rotas podem devolver 405)
+      const res = await fetch(
+        `/api/respostas/${encodeURIComponent(String(resposta.idResposta))}`
+      );
+      if (res.status === 405 || !res.ok)
+        throw new Error("MethodNotAllowedOrNotOk");
+      const data = await res.json().catch(() => null);
+      const latest: RespostaResumo = data?.resposta ?? data ?? resposta;
+      setRespostaParaCorrigir(latest);
+      setNotaCorrecao(latest.notaObtida ?? "");
+      setFeedbackCorrecao(latest.feedback ?? "");
+    } catch (err) {
+      // fallback: buscar lista de respostas da atividade/turma e encontrar pelo id
+      try {
+        const atividadeId =
+          modalSelectedAtividadeId ?? atividadeDetalhe?.idAtividade ?? null;
+        const turmaQuery = turmaSelecionada
+          ? `&turmaId=${encodeURIComponent(String(turmaSelecionada.idTurma))}`
+          : "";
+        if (atividadeId) {
+          const listRes = await fetch(
+            `/api/respostas?atividadeId=${encodeURIComponent(
+              String(atividadeId)
+            )}${turmaQuery}`
+          );
+          const listData = await listRes.json().catch(() => null);
+          let arr: any[] = [];
+          if (listRes.ok && Array.isArray(listData)) arr = listData;
+          else if (listRes.ok && listData && Array.isArray(listData.respostas))
+            arr = listData.respostas;
+          const found = arr.find(
+            (x) => Number(x.idResposta) === Number(resposta.idResposta)
+          );
+          if (found) {
+            setRespostaParaCorrigir(found as RespostaResumo);
+            setNotaCorrecao(found.notaObtida ?? "");
+            setFeedbackCorrecao(found.feedback ?? "");
+            setCorrecaoModalAberto(true);
+            // foco simples no campo de nota
+            setTimeout(() => {
+              const el = document.querySelector<HTMLInputElement>(
+                'input[type="number"]'
+              );
+              el?.focus();
+            }, 120);
+            return;
+          }
+        }
+      } catch (err2) {
+        console.warn("abrirModalCorrecao fallback failed:", err2);
+      }
+      // fallback final: usa o objeto recebido
+      setRespostaParaCorrigir(resposta);
+      setNotaCorrecao(resposta.notaObtida ?? "");
+      setFeedbackCorrecao(resposta.feedback ?? "");
+    } finally {
+      // sempre abre o modal mesmo em fallback
+      setCorrecaoModalAberto(true);
+      setTimeout(() => {
+        const el = document.querySelector<HTMLInputElement>(
+          'input[type="number"]'
+        );
+        el?.focus();
+      }, 120);
+    }
   }
 
   async function enviarCorrecao() {
@@ -576,7 +748,7 @@ export default function PageProfessor() {
         alert(data?.error || `Erro ao salvar correção (${res.status})`);
         return;
       }
-      // Atualiza o estado local de respostas para refletir a correcao imediatamente
+      // Atualiza o estado local de respostas para refletir a correção e feedback
       setRespostas((prev) =>
         prev.map((r) =>
           r.idResposta === data.idResposta
@@ -584,9 +756,20 @@ export default function PageProfessor() {
             : r
         )
       );
+      // atualiza o modal de correção e o detalhe caso estejam abertos para a mesma resposta
+      setRespostaParaCorrigir((prev) =>
+        prev && prev.idResposta === data.idResposta
+          ? { ...prev, notaObtida: data.notaObtida, feedback: data.feedback }
+          : prev
+      );
+      setRespostaDetalhe((prev) =>
+        prev && prev.idResposta === data.idResposta
+          ? { ...prev, notaObtida: data.notaObtida, feedback: data.feedback }
+          : prev
+      );
       alert("Correção salva com sucesso.");
       setCorrecaoModalAberto(false);
-      // opcional: atualizar lista de respostas recarregando do servidor:
+      // recarrega a lista de respostas para garantir consistência (opcional)
       if (atividadeDetalhe && turmaSelecionada) {
         await fetchRespostasParaAtividade(
           atividadeDetalhe.idAtividade,
@@ -613,6 +796,14 @@ export default function PageProfessor() {
   // ActivityItem: collapsible card rendered inline and centered width
   function ActivityItem({ atividade }: { atividade: Atividade }) {
     const isExpanded = expandedAtividadeId === atividade.idAtividade;
+
+    // detecta se estamos no contexto professor (estado existente no arquivo)
+    const isProfessor = typeof professorId === "number" && professorId != null;
+
+    // se há turma selecionada, verifica se a atividade já está aplicada nela
+    const alreadyApplied = turmaSelecionada
+      ? atividadesTurma.some((a) => a.idAtividade === atividade.idAtividade)
+      : false;
 
     const onToggle = (e?: React.MouseEvent) => {
       e?.stopPropagation();
@@ -662,7 +853,8 @@ export default function PageProfessor() {
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              {turmaSelecionada && (
+              {/* ocultar botões de aplicar quando o usuário for professor */}
+              {!isProfessor && turmaSelecionada && !alreadyApplied && (
                 <button
                   className={styles.btn}
                   onClick={(e) => {
@@ -674,32 +866,6 @@ export default function PageProfessor() {
                   Aplicar
                 </button>
               )}
-
-              <button
-                className={styles.btn}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  abrirModalAplicar(atividade);
-                }}
-                style={{ background: "#2196f3", color: "#fff" }}
-              >
-                Outras
-              </button>
-
-              <button
-                className={styles.btn}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!turmaSelecionada) {
-                    alert("Selecione uma turma primeiro.");
-                    return;
-                  }
-                  mostrarDesempenhoParaAtividadeAplicada(atividade);
-                }}
-                style={{ background: "#4caf50", color: "#fff" }}
-              >
-                Desempenho
-              </button>
             </div>
           </div>
 
@@ -721,7 +887,58 @@ export default function PageProfessor() {
                     saveEndpoint="/api/respostas/plugged"
                     alunoId={studentId}
                     initialLoad={true}
+                    atividadeId={atividade.idAtividade}
+                    turmaId={turmaSelecionada?.idTurma ?? null}
                   />
+
+                  {/* ações para atividades PLUGGED */}
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* professor vê apenas Desempenho para PLUGGED; aplicar escondido para professor */}
+                    {isProfessor ? (
+                      <button
+                        className={styles.btn}
+                        onClick={() =>
+                          mostrarDesempenhoParaAtividadeAplicada(atividade)
+                        }
+                        style={{ background: "#6a5acd", color: "#fff" }}
+                      >
+                        Desempenho
+                      </button>
+                    ) : (
+                      <>
+                        {turmaSelecionada && !alreadyApplied && (
+                          <button
+                            className={styles.btn}
+                            onClick={() => aplicarEmTurmaAtualQuick(atividade)}
+                            style={{ background: "#00bcd4", color: "#042027" }}
+                          >
+                            Aplicar nesta turma ({turmaSelecionada.nome})
+                          </button>
+                        )}
+                        {!alreadyApplied && (
+                          <button
+                            className={styles.btn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirModalAplicar(atividade);
+                            }}
+                            style={{ background: "#2196f3", color: "#fff" }}
+                          >
+                            Aplicar em turmas
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -787,7 +1004,7 @@ export default function PageProfessor() {
                       alignItems: "center",
                     }}
                   >
-                    {turmaSelecionada && (
+                    {turmaSelecionada && !alreadyApplied && (
                       <button
                         className={styles.btn}
                         onClick={() => aplicarEmTurmaAtualQuick(atividade)}
@@ -796,37 +1013,29 @@ export default function PageProfessor() {
                         Aplicar nesta turma ({turmaSelecionada.nome})
                       </button>
                     )}
-                    <button
-                      className={styles.btn}
-                      onClick={() => abrirModalAplicar(atividade)}
-                      style={{ background: "#2196f3", color: "#fff" }}
-                    >
-                      Aplicar em outras turmas
-                    </button>
-                    <button
-                      className={styles.btn}
-                      onClick={() => {
-                        if (!turmaSelecionada) {
-                          alert("Selecione uma turma para ver desempenho.");
-                          return;
+
+                    {/* botão de desempenho — aparece somente quando estamos dentro de uma turma */}
+                    {turmaSelecionada && (
+                      <button
+                        className={styles.btn}
+                        onClick={() =>
+                          mostrarDesempenhoParaAtividadeAplicada(atividade)
                         }
-                        mostrarDesempenhoParaAtividadeAplicada(atividade);
-                      }}
-                      style={{ background: "#4caf50", color: "#fff" }}
-                    >
-                      Ver Desempenho
-                    </button>
-                    <button
-                      className={styles.btn}
-                      onClick={() =>
-                        router.push(
-                          `/professor/atividade/${atividade.idAtividade}`
-                        )
-                      }
-                      style={{ background: "#666", color: "#fff" }}
-                    >
-                      Abrir página
-                    </button>
+                        style={{ background: "#6a5acd", color: "#fff" }}
+                      >
+                        Desempenho
+                      </button>
+                    )}
+
+                    {!alreadyApplied && (
+                      <button
+                        className={styles.btn}
+                        onClick={() => abrirModalAplicar(atividade)}
+                        style={{ background: "#2196f3", color: "#fff" }}
+                      >
+                        Aplicar em turmas
+                      </button>
+                    )}
 
                     <button
                       className={styles.btnVoltarModal}
@@ -1153,7 +1362,14 @@ export default function PageProfessor() {
                   type="text"
                   value={nomeTurma}
                   onChange={(e) => setNomeTurma(e.target.value)}
-                  style={{ width: "100%", padding: 8 }}
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    borderRadius: 6,
+                    border: "1px solid #ccc",
+                    background: "#fff",
+                    color: "#000",
+                  }}
                 />
               </div>
 
@@ -1200,14 +1416,28 @@ export default function PageProfessor() {
                       placeholder="Nome"
                       value={formAluno.nome}
                       onChange={handleAlunoChange}
-                      style={{ flex: 1, padding: 8 }}
+                      style={{
+                        flex: 1,
+                        padding: 8,
+                        borderRadius: 6,
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#000",
+                      }}
                     />
                     <input
                       name="email"
                       placeholder="Email"
                       value={formAluno.email}
                       onChange={handleAlunoChange}
-                      style={{ flex: 1, padding: 8 }}
+                      style={{
+                        flex: 1,
+                        padding: 8,
+                        borderRadius: 6,
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#000",
+                      }}
                     />
                   </div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -1216,14 +1446,28 @@ export default function PageProfessor() {
                       placeholder="Senha"
                       value={formAluno.senha}
                       onChange={handleAlunoChange}
-                      style={{ flex: 1, padding: 8 }}
+                      style={{
+                        flex: 1,
+                        padding: 8,
+                        borderRadius: 6,
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#000",
+                      }}
                     />
                     <input
                       name="confirmarSenha"
                       placeholder="Confirmar senha"
                       value={formAluno.confirmarSenha}
                       onChange={handleAlunoChange}
-                      style={{ flex: 1, padding: 8 }}
+                      style={{
+                        flex: 1,
+                        padding: 8,
+                        borderRadius: 6,
+                        border: "1px solid #ccc",
+                        background: "#fff",
+                        color: "#000",
+                      }}
                     />
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
@@ -1287,14 +1531,18 @@ export default function PageProfessor() {
           )}
         </div>
 
-        {/* restante dos modals (respostaDetalhe, correcao, desempenho) permanecem iguais (preservados) */}
         {respostaDetalhe && (
           <div
             className={`${styles.modal} ${styles.modalActive}`}
             role="dialog"
             aria-modal="true"
+            // garante que este modal fique sobre o modal de desempenho
+            style={{ zIndex: 11020 }}
           >
-            <div className={styles.modalContent}>
+            <div
+              className={styles.modalContent}
+              style={{ position: "relative", zIndex: 11021 }}
+            >
               <h3>
                 Resposta de{" "}
                 {respostaDetalhe.aluno?.nome ?? respostaDetalhe.idAluno}
@@ -1308,6 +1556,26 @@ export default function PageProfessor() {
               >
                 {respostaDetalhe.respostaTexto ?? "Sem texto enviado."}
               </div>
+
+              <div style={{ marginTop: 16 }}>
+                <strong>Feedback do professor</strong>
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: "12px 16px",
+                    background: "#2b2638",
+                    borderRadius: 8,
+                    color: "#dcd7ee",
+                    minHeight: 48,
+                  }}
+                >
+                  {respostaDetalhe.feedback &&
+                  respostaDetalhe.feedback.length > 0
+                    ? respostaDetalhe.feedback
+                    : "Nenhum feedback foi fornecido ainda."}
+                </div>
+              </div>
+
               <div style={{ marginTop: 12 }}>
                 <button
                   className={styles.btn}
@@ -1333,8 +1601,12 @@ export default function PageProfessor() {
             className={`${styles.modal} ${styles.modalActive}`}
             role="dialog"
             aria-modal="true"
+            style={{ zIndex: 11010 }}
           >
-            <div className={styles.modalContent}>
+            <div
+              className={styles.modalContent}
+              style={{ position: "relative", zIndex: 11011 }}
+            >
               <h3>
                 Corrigir resposta —{" "}
                 {respostaParaCorrigir.aluno?.nome ??
@@ -1405,24 +1677,111 @@ export default function PageProfessor() {
           className={`${styles.modal} ${
             modalDesempenhoAberto ? styles.modalActive : ""
           }`}
+          // desempenho fica atrás dos modais de resposta/correção
+          style={{ zIndex: 10000 }}
         >
           <div
             className={`${styles.modalContent} ${styles.desempenhoModalContent}`}
           >
-            <h2>Desempenho da Turma na Atividade</h2>
+            <h2>Desempenho da Turma</h2>
             <div style={{ marginTop: 12 }}>
               <strong>Turma:</strong> {turmaSelecionada?.nome ?? "—"}
             </div>
+
             <div style={{ marginTop: 12 }}>
               {turmaSelecionada ? (
-                <DesempenhoAlunos
-                  turmaId={turmaSelecionada.idTurma}
-                  atividadeId={atividadeDetalhe?.idAtividade ?? null}
-                />
+                <>
+                  {/* resumo da atividade */}
+                  {atividadeDetalhe ? (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontWeight: 700 }}>
+                        {atividadeDetalhe.titulo}
+                      </div>
+                      <div
+                        style={{
+                          color: "#dcd7ee",
+                          marginTop: 6,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {atividadeDetalhe.descricao ?? ""}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* modo unplugged: lista de respostas (segunda tela) */}
+                  {desempenhoView === "unplugged" ? (
+                    <>
+                      {loadingRespostas ? (
+                        <div>Carregando respostas...</div>
+                      ) : respostas.length === 0 ? (
+                        <div>
+                          Nenhuma resposta encontrada para esta atividade.
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 12 }}>
+                          {respostas.map((r) => (
+                            <div
+                              key={r.idResposta}
+                              style={{
+                                padding: 12,
+                                borderRadius: 8,
+                                background: "rgba(0,0,0,0.12)",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 700 }}>
+                                  {r.aluno?.nome ?? `Aluno ${r.idAluno}`}
+                                </div>
+                                <div style={{ color: "#cfcce0" }}>
+                                  {r.aluno?.email ?? ""}
+                                </div>
+                                <div style={{ marginTop: 6, color: "#dcd7ee" }}>
+                                  {r.respostaTexto ?? ""}
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button
+                                  className={styles.btn}
+                                  onClick={() => abrirRespostaDetalhe(r)}
+                                >
+                                  Ver Resposta
+                                </button>
+                                <button
+                                  className={styles.btn}
+                                  onClick={() => abrirModalCorrecao(r)}
+                                >
+                                  Corrigir
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : // modo plugged: componente existente
+                  modalSelectedAtividadeId ? (
+                    <DesempenhoAlunos
+                      turmaId={turmaSelecionada.idTurma}
+                      atividadeId={modalSelectedAtividadeId}
+                    />
+                  ) : atividadeDetalhe ? (
+                    <DesempenhoAlunos
+                      turmaId={turmaSelecionada.idTurma}
+                      atividadeId={atividadeDetalhe.idAtividade}
+                    />
+                  ) : (
+                    <p>Abra o desempenho a partir de uma atividade.</p>
+                  )}
+                </>
               ) : (
                 <p>Selecione uma turma para ver desempenho.</p>
               )}
             </div>
+
             <div
               style={{
                 marginTop: 16,
@@ -1432,7 +1791,10 @@ export default function PageProfessor() {
             >
               <button
                 className={styles.btnVoltarModal}
-                onClick={() => setModalDesempenhoAberto(false)}
+                onClick={() => {
+                  setModalDesempenhoAberto(false);
+                  setModalSelectedAtividadeId(null);
+                }}
               >
                 Fechar
               </button>

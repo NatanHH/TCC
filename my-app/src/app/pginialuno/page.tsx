@@ -12,6 +12,8 @@ type PluggedContagemMCQProps = {
   alunoId?: number | null;
   initialLoad?: boolean;
   autoSave?: boolean;
+  atividadeId?: number | null;
+  turmaId?: number | null;
 };
 const PluggedContagemMCQ = dynamic<PluggedContagemMCQProps>(
   () => import("../../components/PluggedContagemMCQ").then((m) => m.default),
@@ -101,13 +103,38 @@ export default function Page(): JSX.Element {
   // Keep local state in sync with storage if something else sets it later
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const id = localStorage.getItem("idAluno");
-    const nome = localStorage.getItem("alunoNome");
-    const email = localStorage.getItem("alunoEmail");
 
-    if (id) setAlunoId(Number(id));
-    if (nome !== null) setAlunoNome(nome);
-    if (email !== null) setAlunoEmail(email);
+    const syncAlunoFromStorage = () => {
+      try {
+        const id = localStorage.getItem("idAluno");
+        const nome = localStorage.getItem("alunoNome");
+        const email = localStorage.getItem("alunoEmail");
+        setAlunoId(id ? Number(id) : null);
+        setAlunoNome(nome ?? "");
+        setAlunoEmail(email ?? "");
+      } catch {
+        /* ignore */
+      }
+    };
+
+    // initial sync
+    syncAlunoFromStorage();
+
+    // sync when localStorage changes in other tabs
+    const onStorage = (ev: StorageEvent) => {
+      if (!ev.key || ev.key.startsWith("aluno")) syncAlunoFromStorage();
+    };
+
+    // custom event to sync inside same tab after we update localStorage programmatically
+    const onAlunoUpdate = () => syncAlunoFromStorage();
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("alunoUpdate", onAlunoUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("alunoUpdate", onAlunoUpdate as EventListener);
+    };
   }, []);
 
   // Buscar atividades
@@ -372,6 +399,10 @@ export default function Page(): JSX.Element {
                 localStorage.setItem("alunoNome", found.aluno.nome);
               if (found.aluno.email)
                 localStorage.setItem("alunoEmail", found.aluno.email);
+              if (found.aluno.idAluno)
+                localStorage.setItem("idAluno", String(found.aluno.idAluno));
+              // notify same-tab listeners to refresh UI
+              window.dispatchEvent(new Event("alunoUpdate"));
             }
           } catch {}
         }
@@ -393,6 +424,7 @@ export default function Page(): JSX.Element {
                 localStorage.setItem("alunoNome", found.aluno.nome);
               if (found.aluno.email)
                 localStorage.setItem("alunoEmail", found.aluno.email);
+              window.dispatchEvent(new Event("alunoUpdate"));
             }
           } catch {}
         }
@@ -638,13 +670,13 @@ export default function Page(): JSX.Element {
               {atividadeSelecionada.tipo === "PLUGGED" ? (
                 <div style={{ marginTop: 12 }}>
                   <PluggedContagemMCQ
-                    fetchEndpoint={`/api/atividades/plugged/contagem-instance?turmaId=${
-                      atividadeSelecionada.turma?.idTurma ?? ""
-                    }`}
+                    fetchEndpoint="/api/atividades/plugged/contagem-instance"
                     saveEndpoint="/api/respostas/plugged"
                     alunoId={alunoId}
                     initialLoad={true}
                     autoSave={true}
+                    atividadeId={atividadeSelecionada.idAtividade}
+                    turmaId={atividadeSelecionada.turma?.idTurma ?? null}
                   />
                   <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
                     <button className={styles.btn} onClick={voltarParaLista}>

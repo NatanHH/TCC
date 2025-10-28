@@ -75,6 +75,7 @@ export default function DesempenhoAlunos({
     q.searchParams.set("alunoId", String(alunoId));
     if (atividadeId != null)
       q.searchParams.set("atividadeId", String(atividadeId));
+    if (turmaId != null) q.searchParams.set("turmaId", String(turmaId)); // <- important for plugged
     try {
       const r = await fetch(q.toString());
       if (!r.ok) {
