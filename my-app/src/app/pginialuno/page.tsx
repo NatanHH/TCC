@@ -444,8 +444,14 @@ export default function Page(): JSX.Element {
       alert("Selecione uma atividade antes de ver o desempenho.");
       return;
     }
-    await fetchMinhaRespostaParaAtividade(atividadeSelecionada.idAtividade);
-    setModalAberto(true);
+    try {
+      await fetchMinhaRespostaParaAtividade(atividadeSelecionada.idAtividade);
+    } catch (err) {
+      console.error("Erro ao buscar desempenho:", err);
+      // continua — abrimos o modal para mostrar mensagem apropriada ao usuário
+    } finally {
+      setModalAberto(true);
+    }
   }
 
   return (

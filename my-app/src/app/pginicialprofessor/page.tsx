@@ -908,10 +908,10 @@ export default function PageProfessor() {
                         className={styles.btn}
                         onClick={() =>
                           mostrarDesempenhoParaAtividadeAplicada(atividade)
-                        }
+                        }       
                         style={{ background: "#6a5acd", color: "#fff" }}
                       >
-                        Desempenho
+                        Ver Desempenho
                       </button>
                     ) : (
                       <>
@@ -1023,7 +1023,7 @@ export default function PageProfessor() {
                         }
                         style={{ background: "#6a5acd", color: "#fff" }}
                       >
-                        Desempenho
+                        Ver Desempenho
                       </button>
                     )}
 
@@ -1578,14 +1578,6 @@ export default function PageProfessor() {
 
               <div style={{ marginTop: 12 }}>
                 <button
-                  className={styles.btn}
-                  onClick={() => {
-                    /* opcional */
-                  }}
-                >
-                  Ver histórico / dar feedback
-                </button>
-                <button
                   className={styles.btnVoltarModal}
                   onClick={fecharRespostaDetalhe}
                 >
@@ -1627,7 +1619,15 @@ export default function PageProfessor() {
                       e.target.value === "" ? "" : Number(e.target.value)
                     )
                   }
-                  style={{ width: 120, padding: 8 }}
+                  style={{
+                    width: 120,
+                    padding: 8,
+                    background: "#fff",
+                    color: "#000",
+                    border: "1px solid #ccc",
+                    borderRadius: 6,
+                    outline: "none",
+                  }}
                 />
               </div>
               <div style={{ marginTop: 12 }}>
@@ -1638,7 +1638,16 @@ export default function PageProfessor() {
                   rows={6}
                   value={feedbackCorrecao}
                   onChange={(e) => setFeedbackCorrecao(e.target.value)}
-                  style={{ width: "100%", padding: 8 }}
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    background: "#fff",
+                    color: "#000",
+                    border: "1px solid #ccc",
+                    borderRadius: 6,
+                    outline: "none",
+                    resize: "vertical",
+                  }}
                 />
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -1656,17 +1665,6 @@ export default function PageProfessor() {
                   style={{ background: "#b71c1c", color: "#fff" }}
                 >
                   Cancelar
-                </button>
-                <button
-                  className={styles.btn}
-                  onClick={() =>
-                    router.push(
-                      `/professor/resposta/${respostaParaCorrigir.idResposta}`
-                    )
-                  }
-                  style={{ marginLeft: "auto" }}
-                >
-                  Abrir página de correção
                 </button>
               </div>
             </div>
