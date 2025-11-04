@@ -8,58 +8,49 @@ export default async function handler(
   try {
     if (req.method === "GET") {
       const atividades = await prisma.atividade.findMany({
-        include: { arquivos: true, alternativas: true, turmas: true },
+        include: {
+          alternativas: true,
+          arquivos: true,
+        },
         orderBy: { idAtividade: "desc" },
       });
-      return res.status(200).json({ atividades });
+      return res.status(200).json(atividades);
     }
 
     if (req.method === "POST") {
-      const {
-        titulo,
-        descricao,
-        tipo,
-        nota,
-        professorId,
-        linguagem,
-        script,
-        alternativas,
-      } = req.body;
-
+      const { titulo, descricao, tipo, nota, script, linguagem, alternativas } =
+        req.body;
       if (!titulo || !tipo)
-        return res.status(400).json({ error: "Campos obrigatórios faltando" });
+        return res
+          .status(400)
+          .json({ error: "titulo e tipo são obrigatórios" });
 
       const data: any = {
         titulo,
-        descricao,
+        descricao: descricao || null,
         tipo,
-        nota: nota ?? 1.0,
-        professorId: professorId ?? null,
-        linguagem: linguagem ?? null,
         script: script ?? null,
+        linguagem: linguagem ?? null,
       };
+      if (nota !== undefined && nota !== null) data.nota = Number(nota);
 
-      const atividade = await prisma.atividade.create({
-        data: {
-          ...data,
-          alternativas: alternativas
-            ? {
-                create: alternativas.map((a: any) => ({
-                  texto: a.texto,
-                  correta: !!a.correta,
-                })),
-              }
-            : undefined,
-        },
-        include: { alternativas: true },
-      });
+      if (Array.isArray(alternativas) && alternativas.length > 0) {
+        data.alternativas = {
+          create: alternativas.map((a: any, i: number) => ({
+            texto: a.texto ?? String(a),
+            correta: !!a.correta,
+          })),
+        };
+      }
 
-      return res.status(201).json(atividade);
+      const created = await prisma.atividade.create({ data });
+      return res.status(201).json(created);
     }
 
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "Método não permitido" });
-  } catch (e: any) {
-    console.error("Erro /api/atividade:", e);
-    return res.status(500).json({ error: e?.message || "Erro interno" });
+  } catch (err: any) {
+    console.error("atividades/index error:", err);
+    return res.status(500).json({ error: err?.message || "Erro interno" });
   }
 }

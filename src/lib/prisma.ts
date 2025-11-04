@@ -1,13 +1,13 @@
-// Prisma client singleton to avoid multiple instances in dev (Next.js hot reload)
 import { PrismaClient } from "@prisma/client";
 
 declare global {
+  // evita criar múltiplos clientes em HMR (dev)
   // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
+  var __prisma: PrismaClient | undefined;
 }
 
-const prisma = global.prisma || new PrismaClient();
-
-if (process.env.NODE_ENV !== "production") global.prisma = prisma;
+const prisma = global.__prisma ??= new PrismaClient({
+  log: ["warn", "error"],
+});
 
 export default prisma;

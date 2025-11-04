@@ -12,7 +12,7 @@ export default function Home() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const res = await fetch("/api/loginprofessor", {
+    const res = await fetch("/api/professores/loginprofessor", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, senha }),
