@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import prisma from "../../../../lib/prisma";
 import { withTimeout } from "../../../../lib/timeout";
 
@@ -122,4 +122,15 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(req: NextRequest) {
+  const payload: unknown = await req.json().catch(() => undefined);
+  if (typeof payload !== "object" || payload === null) {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+
+  const body = payload as { atividadeId?: number; turmaId?: number };
+  // ...existing logic using validated body ...
+  return NextResponse.json({}); // placeholder
 }

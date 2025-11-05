@@ -5,7 +5,9 @@ import fs from "fs";
 import crypto from "crypto";
 import prisma from "../../../lib/prisma";
 
-export const config = { api: { bodyParser: false } };
+export const config = {
+  api: { bodyParser: false }, // if the route handles multipart/form-data
+};
 
 const uploadDir = path.join(process.cwd(), "public", "upload");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -34,10 +36,8 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Método não permitido" });
-  }
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
 
   try {
     await runMulter(req, res);
