@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 
 type Alternative = {
   id: string;
@@ -27,7 +27,14 @@ type InstancePayload = {
   instance: Instance;
 };
 
+type RespostaContagem = {
+  alternativa: string;
+  contador: number;
+};
+
 type Props = {
+  // tornar `respostas` opcional para corresponder a importações dinâmicas/usos
+  respostas?: RespostaContagem[];
   fetchEndpoint?: string;
   saveEndpoint?: string;
   autoSave?: boolean; // default false: student must click "Enviar atividade"
@@ -45,6 +52,7 @@ export default function PluggedContagemMCQ({
   alunoId = null,
   atividadeId = null,
   turmaId = null,
+  respostas = [],
 }: Props) {
   const [payload, setPayload] = useState<InstancePayload | null>(null);
   const [loading, setLoading] = useState<boolean>(!!initialLoad);
@@ -173,7 +181,6 @@ export default function PluggedContagemMCQ({
         })
         .finally(() => setLoadingAtividades(false));
     }
-     
   }, [atividadeId, derivedAtividadeId]);
 
   // helper para quando usuário escolhe uma atividade manualmente
@@ -182,6 +189,11 @@ export default function PluggedContagemMCQ({
     // opcional: recarregar instância agora que temos atividadeId
     void fetchInstance();
   }
+
+  const total = useMemo(
+    () => respostas.reduce((s, r) => s + (r.contador ?? 0), 0),
+    [respostas]
+  );
 
   if (loading)
     return <div style={{ color: "#fff" }}>Carregando atividade...</div>;
@@ -458,6 +470,18 @@ export default function PluggedContagemMCQ({
         )}
 
         {saving && <div style={{ color: "#cfc6e6" }}>Enviando...</div>}
+      </div>
+
+      <div>
+        <h3>Contagem MCQ</h3>
+        <ul>
+          {respostas.map((r) => (
+            <li key={r.alternativa}>
+              {r.alternativa} — {r.contador} (
+              {total ? ((r.contador / total) * 100).toFixed(1) : "0"}%)
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

@@ -908,7 +908,7 @@ export default function PageProfessor() {
                         className={styles.btn}
                         onClick={() =>
                           mostrarDesempenhoParaAtividadeAplicada(atividade)
-                        }       
+                        }
                         style={{ background: "#6a5acd", color: "#fff" }}
                       >
                         Ver Desempenho
@@ -1765,11 +1765,13 @@ export default function PageProfessor() {
                     <DesempenhoAlunos
                       turmaId={turmaSelecionada.idTurma}
                       atividadeId={modalSelectedAtividadeId}
+                      dados={[]}
                     />
                   ) : atividadeDetalhe ? (
                     <DesempenhoAlunos
                       turmaId={turmaSelecionada.idTurma}
                       atividadeId={atividadeDetalhe.idAtividade}
+                      dados={[]}
                     />
                   ) : (
                     <p>Abra o desempenho a partir de uma atividade.</p>

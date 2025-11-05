@@ -124,13 +124,27 @@ export async function GET(request: Request) {
   }
 }
 
+type EstatisticasBody = {
+  atividadeId?: number;
+  turmaId?: number;
+  periodo?: { inicio: string; fim: string };
+};
+
 export async function POST(req: NextRequest) {
   const payload: unknown = await req.json().catch(() => undefined);
+
   if (typeof payload !== "object" || payload === null) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const body = payload as { atividadeId?: number; turmaId?: number };
-  // ...existing logic using validated body ...
-  return NextResponse.json({}); // placeholder
+  const body = payload as EstatisticasBody;
+  const atividadeId =
+    typeof body.atividadeId === "number" ? body.atividadeId : undefined;
+  const turmaId = typeof body.turmaId === "number" ? body.turmaId : undefined;
+
+  // use atividadeId / turmaId com segurança no prisma
+  // exemplo (descomente/ajuste conforme sua lógica):
+  // const resultado = await prisma.resposta.findMany({ where: { atividadeId, turmaId } });
+
+  return NextResponse.json({ ok: true /*, resultado */ });
 }

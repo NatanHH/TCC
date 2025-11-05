@@ -1,21 +1,32 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { JSX, useEffect, useState } from "react";
 
 type Student = { id: number; nome: string; email?: string };
 type Stats = { totalAttempts: number; correct: number };
 
+type AlunoDesempenho = {
+  alunoId: number;
+  nome: string;
+  nota?: number | null;
+};
+
+type Props = {
+  dados: AlunoDesempenho[];
+  onClose?: () => void;
+  turmaId?: number | null;
+  atividadeId?: number | null;
+  studentsEndpoint?: string | null;
+  statsEndpointBase?: string | null;
+};
+
 export default function DesempenhoAlunos({
+  dados,
+  onClose,
   turmaId,
   atividadeId,
   studentsEndpoint,
   statsEndpointBase,
-}: {
-  turmaId?: number | null;
-  atividadeId?: number | null;
-  // endpoints opcionais (se não setados, o componente monta defaults)
-  studentsEndpoint?: string;
-  statsEndpointBase?: string;
-}) {
+}: Props): JSX.Element {
   const [students, setStudents] = useState<Student[] | null>(null);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);

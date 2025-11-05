@@ -14,7 +14,10 @@ type PluggedContagemMCQProps = {
   autoSave?: boolean;
   atividadeId?: number | null;
   turmaId?: number | null;
+  // `respostas` opcional para compatibilidade com carregamento dinâmico
+  respostas?: { alternativa: string; contador: number }[];
 };
+
 const PluggedContagemMCQ = dynamic<PluggedContagemMCQProps>(
   () => import("../../components/PluggedContagemMCQ").then((m) => m.default),
   { ssr: false }
