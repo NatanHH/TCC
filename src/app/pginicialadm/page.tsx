@@ -64,7 +64,7 @@ export default function PainelAdm() {
   // ---------------------- Professores CRUD (frontend) ----------------------
   useEffect(() => {
     if (funcaoSelecionada === "Professores") fetchProfessores();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [funcaoSelecionada, showForm, editingProfessor]);
 
   async function fetchProfessores() {
@@ -208,7 +208,7 @@ export default function PainelAdm() {
   // ---------------------- Atividades CRUD (frontend) ----------------------
   useEffect(() => {
     if (funcaoSelecionada === "Atividades") fetchAtividades();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [funcaoSelecionada]);
 
   async function fetchAtividades() {

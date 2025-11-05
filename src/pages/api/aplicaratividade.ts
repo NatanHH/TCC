@@ -5,28 +5,36 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Método não permitido" });
-  }
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
 
-  const { idAtividade, idTurma } = req.body;
+  const payload: unknown = req.body;
+  if (typeof payload !== "object" || payload === null)
+    return res.status(400).json({ error: "Invalid body" });
+
+  const body = payload as {
+    atividadeId?: number;
+    turmaId?: number;
+    alunoId?: number;
+  };
+  const { atividadeId, turmaId, alunoId } = body;
 
   // Validação dos parâmetros
-  if (!idAtividade || !idTurma) {
+  if (atividadeId == null || turmaId == null || alunoId == null) {
     return res.status(400).json({
-      error: "idAtividade e idTurma são obrigatórios",
+      error: "atividadeId, turmaId e alunoId são obrigatórios",
     });
   }
 
   try {
     // Converter para números
-    const atividadeId = Number(idAtividade);
-    const turmaId = Number(idTurma);
+    const atividadeIdNum = Number(atividadeId);
+    const turmaIdNum = Number(turmaId);
+    const alunoIdNum = Number(alunoId);
 
     // Verificar se atividade existe
     const atividade = await prisma.atividade.findUnique({
-      where: { idAtividade: atividadeId },
+      where: { idAtividade: atividadeIdNum },
     });
 
     if (!atividade) {
@@ -35,18 +43,27 @@ export default async function handler(
 
     // Verificar se turma existe
     const turma = await prisma.turma.findUnique({
-      where: { idTurma: turmaId },
+      where: { idTurma: turmaIdNum },
     });
 
     if (!turma) {
       return res.status(404).json({ error: "Turma não encontrada" });
     }
 
+    // Verificar se aluno existe
+    const aluno = await prisma.aluno.findUnique({
+      where: { idAluno: alunoIdNum },
+    });
+
+    if (!aluno) {
+      return res.status(404).json({ error: "Aluno não encontrado" });
+    }
+
     // Verificar se já foi aplicada nesta turma (usando o modelo correto)
     const jaAplicada = await prisma.atividadeTurma.findFirst({
       where: {
-        idTurma: turmaId,
-        idAtividade: atividadeId,
+        idTurma: turmaIdNum,
+        idAtividade: atividadeIdNum,
       },
     });
 
@@ -61,8 +78,8 @@ export default async function handler(
     // Aplicar atividade na turma (usando o modelo correto do seu schema)
     const aplicacao = await prisma.atividadeTurma.create({
       data: {
-        idTurma: turmaId,
-        idAtividade: atividadeId,
+        idTurma: turmaIdNum,
+        idAtividade: atividadeIdNum,
         dataAplicacao: new Date(),
       },
     });

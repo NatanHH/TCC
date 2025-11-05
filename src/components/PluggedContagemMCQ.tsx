@@ -173,7 +173,7 @@ export default function PluggedContagemMCQ({
         })
         .finally(() => setLoadingAtividades(false));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [atividadeId, derivedAtividadeId]);
 
   // helper para quando usuário escolhe uma atividade manualmente

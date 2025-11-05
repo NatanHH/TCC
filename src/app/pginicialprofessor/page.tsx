@@ -172,7 +172,7 @@ export default function PageProfessor() {
     } else {
       fetchAtividadesTurma(turmaSelecionada.idTurma);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [turmaSelecionada, professorId]);
 
   async function fetchAtividades() {

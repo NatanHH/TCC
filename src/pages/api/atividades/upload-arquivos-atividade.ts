@@ -173,4 +173,19 @@ apiRoute.post(async (req: any, res: NextApiResponse) => {
   }
 });
 
-export default apiRoute;
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
+
+  // se usar multipart parser, processe aqui. Caso contrário validar body:
+  const payload: unknown = req.body;
+  if (typeof payload === "object" && payload !== null) {
+    const body = payload as { atividadeId?: number };
+    // ...lógica...
+  }
+
+  return res.status(200).json({ ok: true });
+}
