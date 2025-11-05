@@ -1,0 +1,9 @@
+﻿.next
+node_modules
+backups
+build-output.txt
+lint-output.txt
+undo-report.txt
+.vscode
+/.vercel
+.DS_Store
