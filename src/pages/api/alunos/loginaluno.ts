@@ -6,9 +6,18 @@ export default async function handler(
   res: NextApiResponse
 ) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Método não permitido" });
+    return res.status(405).json({ error: "Method not allowed" });
   }
-  const { email, senha } = req.body;
+
+  const payload: unknown = req.body;
+  if (typeof payload !== "object" || payload === null) {
+    return res.status(400).json({ error: "Invalid body" });
+  }
+
+  const body = payload as { email?: string; senha?: string };
+  const email = body.email ?? "";
+  const senha = body.senha ?? "";
+
   try {
     const aluno = await prisma.aluno.findUnique({ where: { email } });
     if (!aluno || aluno.senha !== senha) {
