@@ -18,12 +18,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    // safe adapter for prisma methods we use (avoid `any` spreads in code)
+    // Adapter typing to avoid spreading `any` from prisma in source
     const p = prisma as unknown as {
       respostaAlunoAtividade: { count(args: unknown): Promise<number> };
       realizacaoPlugged: {
         count(args: unknown): Promise<number>;
-        findMany(args: unknown): Promise<
+        findMany(
+          args: unknown
+        ): Promise<
           Array<{
             selectedValue: unknown;
             correctValue: unknown;
@@ -57,7 +59,7 @@ export async function GET(request: Request) {
       where: { ...wherePluggedBase, notaObtida: { gt: 0 } },
     });
 
-    // batch-read to compare selectedValue vs correctValue
+    // Batch-read to compare selectedValue vs correctValue safely in JS
     const batchSize = 1000;
     let offset = 0;
     let corretasByMatch = 0;
